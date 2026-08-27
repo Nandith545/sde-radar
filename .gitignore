@@ -1,0 +1,21 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/**/__pycache__/
+backend/*.db
+backend/.env
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/e2e_smoke.mjs
+frontend/*.png
+
+# Build output copied into backend for single-service deploy
+backend/static/
+
+# OS / editor
+.DS_Store
+.vscode/
