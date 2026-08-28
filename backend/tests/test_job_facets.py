@@ -5,13 +5,18 @@ must come back "unknown" so the caller can skip the preference, rather than
 being quietly classified and then quietly penalised.
 """
 
+import datetime
+
 import pytest
 
 from app.services.job_facets import (
+    FRESHNESS_WINDOWS,
+    MAX_AGE_DAYS,
     annual_comp,
     infer_country,
     infer_seniority,
     infer_work_mode,
+    job_age_days,
     normalize_country,
     seniority_distance,
     seniority_from_years,
@@ -154,3 +159,49 @@ def test_annual_comp(cmin, cmax, unit, expected) -> None:
 def test_a_posting_without_salary_is_unknown_not_zero() -> None:
     """The distinction the salary floor depends on: most boards omit pay."""
     assert annual_comp(None, None, "year") is None
+
+
+# ---- Freshness ---------------------------------------------------------
+
+
+def _dt(iso: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(iso).replace(tzinfo=datetime.UTC)
+
+
+def test_age_prefers_the_boards_own_posted_date() -> None:
+    now = _dt("2026-08-28")
+    # created_at is much later than posted; posted must win.
+    assert job_age_days("2026-08-21", _dt("2026-08-28"), now) == 7
+
+
+def test_age_falls_back_to_created_at_when_posted_is_empty() -> None:
+    """Arbeitnow blanks `posted` when the timestamp won't parse. created_at is
+    a real upper bound -- we can't have ingested a job before it existed."""
+    now = _dt("2026-08-28")
+    assert job_age_days("", _dt("2026-08-26"), now) == 2
+
+
+def test_age_falls_back_when_posted_is_unparseable() -> None:
+    now = _dt("2026-08-28")
+    assert job_age_days("not-a-date", _dt("2026-08-26"), now) == 2
+
+
+def test_age_handles_naive_datetimes_from_sqlite() -> None:
+    """SQLite returns naive datetimes even for timezone=True columns."""
+    now = _dt("2026-08-28")
+    naive = datetime.datetime(2026, 8, 26)
+    assert job_age_days("", naive, now) == 2
+
+
+def test_a_future_posted_date_is_clamped_to_zero() -> None:
+    now = _dt("2026-08-28")
+    assert job_age_days("2026-09-05", _dt("2026-08-28"), now) == 0
+
+
+def test_freshness_windows_do_not_offer_an_hour_option() -> None:
+    """`posted` is date-only -- every connector truncates with [:10] -- so an
+    hour window could only be answered against created_at, which is when we
+    first saw the posting rather than when it went up."""
+    assert "1h" not in FRESHNESS_WINDOWS
+    assert set(FRESHNESS_WINDOWS) == {"1d", "7d", "14d", "30d"}
+    assert max(FRESHNESS_WINDOWS.values()) == MAX_AGE_DAYS

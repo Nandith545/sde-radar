@@ -162,8 +162,10 @@ export interface Stats {
   offers: number;
 }
 
-export async function listJobs(): Promise<Job[]> {
-  return request("/jobs");
+export type PostedWithin = "1d" | "7d" | "14d" | "30d";
+
+export async function listJobs(postedWithin: PostedWithin = "30d"): Promise<Job[]> {
+  return request(`/jobs?posted_within=${postedWithin}`);
 }
 
 export async function getStats(): Promise<Stats> {

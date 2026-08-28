@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
-import type { Job, JobStatus, Stats, SourceStatus } from "../api";
+import type { Job, JobStatus, Stats, SourceStatus, PostedWithin } from "../api";
 import JobCard from "../components/JobCard";
 import ResumeUpload from "../components/ResumeUpload";
 
@@ -16,6 +16,16 @@ const STATUS_FILTERS: { value: JobStatus | "all"; label: string }[] = [
   { value: "rejected", label: "Rejected" },
 ];
 
+// Capped at 30 days because the API refuses anything older, whatever is
+// asked for. No "last hour": every connector truncates its timestamp to a
+// date, so hour-level freshness is not something this data can support.
+const POSTED_WINDOWS: { value: PostedWithin; label: string }[] = [
+  { value: "1d", label: "Posted: Last 24 hours" },
+  { value: "7d", label: "Posted: Last 7 days" },
+  { value: "14d", label: "Posted: Last 14 days" },
+  { value: "30d", label: "Posted: Last 30 days" },
+];
+
 export default function Dashboard() {
   const { user, logout, refreshUser } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -24,13 +34,16 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<"score" | "comp" | "posted">("score");
+  // Newest-first by default: the API already returns them in that order,
+  // and a stale-but-strong match is worth less than a fresh decent one.
+  const [sort, setSort] = useState<"score" | "comp" | "posted">("posted");
+  const [postedWithin, setPostedWithin] = useState<PostedWithin>("30d");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
 
   const load = async () => {
     setLoading(true);
     try {
-      const [j, s] = await Promise.all([api.listJobs(), api.getStats()]);
+      const [j, s] = await Promise.all([api.listJobs(postedWithin), api.getStats()]);
       setJobs(j);
       setStats(s);
     } finally {
@@ -39,9 +52,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    load();
     api.getSources().then(setSources).catch(() => setSources([]));
   }, []);
+
+  // The age window is applied by the API, not in the browser, so changing it
+  // has to refetch rather than filter what's already on screen.
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postedWithin]);
 
   const onUpdate = async (jobId: number, patch: { status?: JobStatus; notes?: string }) => {
     const updated = await api.updateMatch(jobId, patch);
@@ -154,6 +173,15 @@ export default function Dashboard() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <select
+          value={postedWithin}
+          aria-label="Posted within"
+          onChange={(e) => setPostedWithin(e.target.value as PostedWithin)}
+        >
+          {POSTED_WINDOWS.map((w) => (
+            <option key={w.value} value={w.value}>{w.label}</option>
+          ))}
+        </select>
         <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
           <option value="score">Sort: Match score</option>
           <option value="comp">Sort: Compensation</option>
@@ -176,7 +204,11 @@ export default function Dashboard() {
       {loading ? (
         <div className="spinner-wrap">Loading your matches…</div>
       ) : visibleJobs.length === 0 ? (
-        <div className="empty-state">No jobs match this filter yet.</div>
+        <div className="empty-state">
+          {jobs.length === 0
+            ? "Nothing posted in this window. Try a wider one, or hit Refresh jobs."
+            : "No jobs match this filter yet."}
+        </div>
       ) : (
         <div className="cards">
           {visibleJobs.map((job, i) => (

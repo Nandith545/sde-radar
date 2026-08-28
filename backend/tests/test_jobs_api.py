@@ -1,5 +1,7 @@
 """Job listing, scoring and status-tracking endpoints."""
 
+import datetime
+
 from fastapi.testclient import TestClient
 
 
@@ -129,3 +131,50 @@ def test_health_and_sources_are_public(client: TestClient) -> None:
     names = {s["name"] for s in sources}
     assert {"adzuna", "jooble", "remotive", "arbeitnow"} <= names
     assert all(isinstance(s["active"], bool) for s in sources)
+
+
+# ---- Freshness filtering -----------------------------------------------
+
+
+def test_stale_jobs_are_never_returned(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    """The 30-day ceiling is a product rule, not a default."""
+    from app.services.job_facets import MAX_AGE_DAYS
+
+    jobs = client.get("/api/jobs", headers=user_with_resume["headers"]).json()
+    today = datetime.date.today()
+    for job in jobs:
+        if job["posted"]:
+            age = (today - datetime.date.fromisoformat(job["posted"])).days
+            assert age <= MAX_AGE_DAYS, f"{job['title']} is {age} days old"
+
+
+def test_a_narrower_window_returns_a_subset(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    month = client.get("/api/jobs?posted_within=30d", headers=user_with_resume["headers"]).json()
+    week = client.get("/api/jobs?posted_within=7d", headers=user_with_resume["headers"]).json()
+
+    assert len(week) <= len(month)
+    assert {j["id"] for j in week} <= {j["id"] for j in month}
+
+
+def test_results_are_ordered_newest_first(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    jobs = client.get("/api/jobs", headers=user_with_resume["headers"]).json()
+    dated = [j["posted"] for j in jobs if j["posted"]]
+    assert dated == sorted(dated, reverse=True)
+
+
+def test_the_ceiling_cannot_be_raised_by_the_caller(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    """A caller passing an unknown window is rejected rather than quietly
+    served everything."""
+    response = client.get("/api/jobs?posted_within=365d", headers=user_with_resume["headers"])
+    assert response.status_code == 422
+
+
+def test_an_unknown_window_names_the_valid_ones(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    detail = client.get("/api/jobs?posted_within=nonsense", headers=user_with_resume["headers"]).json()[
+        "detail"
+    ]
+    assert "1d" in detail and "30d" in detail
