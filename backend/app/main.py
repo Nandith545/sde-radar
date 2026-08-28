@@ -155,13 +155,34 @@ def sources_status():
 
 
 # ---- Serve the built React frontend (single-service deploy) ----------
+def safe_static_file(root: Path, url_path: str) -> Path | None:
+    """Resolve a URL path to a file *inside* `root`, or None.
+
+    The SPA catch-all takes its path straight from the URL, so a naive
+    `root / url_path` resolves "%2e%2e/%2e%2e/.env" (Starlette percent-decodes
+    before this sees it) to a real file outside the bundle -- which served
+    source, config, and the JWT secret. Resolving the candidate and confirming
+    containment closes that: a traversal escapes `root`, fails the
+    `is_relative_to` check, and returns None so the caller serves index.html.
+    """
+    if not url_path:
+        return None
+    root = root.resolve()
+    candidate = (root / url_path).resolve()
+    if candidate.is_relative_to(root) and candidate.is_file():
+        return candidate
+    return None
+
+
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{full_path:path}")
     def spa_catch_all(full_path: str):
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
+        served = safe_static_file(FRONTEND_DIST, full_path)
+        if served is not None:
+            return FileResponse(served)
+        # Real client-side routes like "/settings" have no file and correctly
+        # fall through to the SPA entrypoint.
         return FileResponse(FRONTEND_DIST / "index.html")
