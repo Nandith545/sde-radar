@@ -17,6 +17,15 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
 }
+/** Whether the current session was "kept signed in".
+ *
+ * Anything that re-issues a token mid-session -- changing your email or
+ * password -- has to write the replacement back to the same store, or the
+ * user silently loses (or gains) the choice they made at sign-in.
+ */
+export function wasRemembered(): boolean {
+  return localStorage.getItem(TOKEN_KEY) !== null;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -69,6 +78,8 @@ export interface User {
   work_mode: WorkMode;
   seniority: Seniority;
   min_salary: number | null;
+  address: string;
+  phone: string;
   has_resume: boolean;
 }
 
@@ -89,12 +100,28 @@ export async function login(email: string, password: string): Promise<{ access_t
   });
 }
 
+export async function changePassword(currentPassword: string, newPassword: string): Promise<{ access_token: string }> {
+  return request("/auth/password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+// Returns a replacement token: the JWT subject is the email, so the caller's
+// current one stops resolving the instant this succeeds.
+export async function changeEmail(newEmail: string, currentPassword: string): Promise<{ access_token: string }> {
+  return request("/auth/email", {
+    method: "POST",
+    body: JSON.stringify({ new_email: newEmail, current_password: currentPassword }),
+  });
+}
+
 export async function fetchMe(): Promise<User> {
   return request("/auth/me");
 }
 
 export async function updateMe(
-  payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary">>,
+  payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary" | "address" | "phone">>,
 ): Promise<User> {
   return request("/auth/me", { method: "PATCH", body: JSON.stringify(payload) });
 }

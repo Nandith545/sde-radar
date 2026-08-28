@@ -39,6 +39,8 @@ class UserOut(BaseModel):
     work_mode: WorkMode
     seniority: Seniority
     min_salary: float | None
+    address: str
+    phone: str
     has_resume: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -53,6 +55,21 @@ class UserUpdate(BaseModel):
     seniority: Seniority | None = None
     # 0 is a meaningful 'no floor' the UI can send when the box is cleared.
     min_salary: float | None = Field(default=None, ge=0, le=10_000_000)
+    address: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=50)
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class EmailChange(BaseModel):
+    new_email: EmailStr
+    # Required even though the caller is already authenticated: a token left
+    # open on a shared machine shouldn't be enough to move the account to an
+    # address the owner doesn't control.
+    current_password: str
 
 
 # ---- Resume -------------------------------------------------------------

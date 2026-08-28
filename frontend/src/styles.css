@@ -216,3 +216,9 @@ button{cursor:pointer;}
 .prefixed-input span{position:absolute; left:11px; top:50%; transform:translateY(-50%);
   color:var(--text-faint); font-size:13px; pointer-events:none;}
 .prefixed-input input{padding-left:24px;}
+
+/* The account panels submit independently of the preferences form, so they
+   sit in their own grid below it rather than inside it. */
+.account-grid{margin-top:16px;}
+.field textarea{width:100%; background:var(--surface-2); border:1px solid var(--border);
+  border-radius:8px; padding:9px 11px; color:var(--text); font:inherit; resize:vertical;}
