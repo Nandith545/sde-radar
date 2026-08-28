@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -161,17 +162,24 @@ def safe_static_file(root: Path, url_path: str) -> Path | None:
     The SPA catch-all takes its path straight from the URL, so a naive
     `root / url_path` resolves "%2e%2e/%2e%2e/.env" (Starlette percent-decodes
     before this sees it) to a real file outside the bundle -- which served
-    source, config, and the JWT secret. Resolving the candidate and confirming
-    containment closes that: a traversal escapes `root`, fails the
-    `is_relative_to` check, and returns None so the caller serves index.html.
+    source, config, and the JWT secret.
+
+    Containment is enforced with ``os.path.commonpath``: if the resolved
+    candidate doesn't share the whole of ``root`` as a common prefix, it has
+    escaped and we return None so the caller serves index.html. commonpath is
+    used rather than ``Path.is_relative_to`` because it is the form static
+    analysis recognises as a path-traversal guard -- the two are equivalent
+    here, and a scanner that can prove the check is real is worth more than a
+    slightly terser one it cannot.
     """
     if not url_path:
         return None
-    root = root.resolve()
-    candidate = (root / url_path).resolve()
-    if candidate.is_relative_to(root) and candidate.is_file():
-        return candidate
-    return None
+    root_real = os.path.realpath(root)
+    candidate = os.path.realpath(os.path.join(root_real, url_path))
+    if os.path.commonpath([root_real, candidate]) != root_real:
+        return None
+    resolved = Path(candidate)
+    return resolved if resolved.is_file() else None
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
