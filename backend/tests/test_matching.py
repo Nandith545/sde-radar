@@ -103,3 +103,58 @@ def test_clean_full_time_senior_role_has_no_flag(make_job) -> None:
         make_job(title="Senior Software Engineer", job_type="Full-time"), _user(), _resume(["Java"])
     )
     assert result.flag is None
+
+
+# ---- Work mode and country preferences ---------------------------------
+
+
+def test_matching_work_mode_scores_higher_than_mismatched(make_job) -> None:
+    user = _user(work_mode="remote")
+    resume = _resume(["Python"])
+
+    remote = score_job(make_job(location="Remote (US)", skills=["Python"]), user, resume)
+    onsite = score_job(make_job(location="Austin, TX — On-site", skills=["Python"]), user, resume)
+
+    assert remote.score > onsite.score
+    assert "remote" in remote.reason.lower()
+    assert onsite.flag and "onsite" in onsite.flag.lower()
+
+
+def test_unreadable_work_mode_is_not_penalised(make_job) -> None:
+    """The point of "unknown": never hide a job for being hard to classify."""
+    user_with_pref = _user(work_mode="remote")
+    user_without = _user()
+    resume = _resume(["Python"])
+    # No remote/onsite/hybrid signal anywhere.
+    job = make_job(location="Seattle, WA", title="Software Engineer", skills=["Python"])
+
+    assert score_job(job, user_with_pref, resume).score == score_job(job, user_without, resume).score
+
+
+def test_job_in_the_wrong_country_is_flagged(make_job) -> None:
+    user = _user(target_country="United States", target_city="")
+    resume = _resume(["Python"])
+
+    abroad = score_job(make_job(location="Leipzig", skills=["Python"]), user, resume)
+
+    assert abroad.flag and "germany" in abroad.flag.lower()
+
+
+def test_remote_job_is_never_flagged_for_its_country(make_job) -> None:
+    """A remote role isn't really "in" a country, so it shouldn't be punished
+    for being listed against one."""
+    user = _user(target_country="United States", target_city="")
+    resume = _resume(["Python"])
+
+    remote = score_job(make_job(location="Remote (Germany)", skills=["Python"]), user, resume)
+
+    assert not (remote.flag and "germany" in remote.flag.lower())
+
+
+def test_country_preference_ignores_unrecognised_locations(make_job) -> None:
+    user_with_pref = _user(target_country="United States", target_city="")
+    user_without = _user(target_city="")
+    resume = _resume(["Python"])
+    job = make_job(location="Atlantis", skills=["Python"])
+
+    assert score_job(job, user_with_pref, resume).score == score_job(job, user_without, resume).score

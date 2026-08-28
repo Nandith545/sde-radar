@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
 import type { Job, JobStatus, Stats, SourceStatus } from "../api";
@@ -90,6 +91,7 @@ export default function Dashboard() {
           <button className="btn secondary" onClick={onRefreshJobs} disabled={refreshing}>
             {refreshing ? "Refreshing…" : "Refresh jobs"}
           </button>
+          <Link className="btn ghost" to="/settings">Settings</Link>
           <button className="btn ghost" onClick={logout}>
             Sign out
           </button>

@@ -56,12 +56,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // ---- Auth ----
+export type WorkMode = "" | "remote" | "hybrid" | "onsite";
+
 export interface User {
   id: number;
   email: string;
   full_name: string;
   target_city: string;
   target_titles: string;
+  target_country: string;
+  work_mode: WorkMode;
   has_resume: boolean;
 }
 
@@ -86,7 +90,9 @@ export async function fetchMe(): Promise<User> {
   return request("/auth/me");
 }
 
-export async function updateMe(payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles">>): Promise<User> {
+export async function updateMe(
+  payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles" | "target_country" | "work_mode">>,
+): Promise<User> {
   return request("/auth/me", { method: "PATCH", body: JSON.stringify(payload) });
 }
 
