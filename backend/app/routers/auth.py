@@ -62,6 +62,8 @@ def _user_out(user: models.User) -> schemas.UserOut:
         work_mode=_work_mode(user.work_mode),
         seniority=_seniority(user.seniority),
         min_salary=user.min_salary,
+        address=user.address,
+        phone=user.phone,
         has_resume=user.resume is not None,
     )
 
@@ -142,6 +144,72 @@ def update_me(
     if payload.min_salary is not None:
         # 0 clears the floor; NULL and 0 both mean 'no minimum' to scoring.
         current_user.min_salary = payload.min_salary or None
+    if payload.address is not None:
+        current_user.address = payload.address
+    if payload.phone is not None:
+        current_user.phone = payload.phone
     db.commit()
     db.refresh(current_user)
     return _user_out(current_user)
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: schemas.PasswordChange,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change the password. Returns no body.
+
+    The current password is required even though the caller already holds a
+    valid token: otherwise a session left open on a shared machine is enough
+    to lock the real owner out of their own account.
+
+    Deliberately does not issue a new token. The JWT's subject is the email,
+    which hasn't changed, and the token carries nothing derived from the
+    password -- so the caller's existing one keeps working and a replacement
+    would be pure ceremony. It would also mean handing a credential back out
+    of a call that took a password as input, which is worth not doing when
+    the call achieves nothing.
+    """
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=400, detail="That's already your password.")
+
+    current_user.hashed_password = hash_password(payload.new_password)
+    db.commit()
+    logger.info("Password changed for user id %s", current_user.id)
+
+    # Tokens are stateless and carry no password reference, so sessions
+    # elsewhere stay valid for their full lifetime. Real revocation needs a
+    # token version column or a denylist; noted, and deliberately not faked
+    # by minting a new token for this session alone.
+
+
+@router.post("/email", response_model=schemas.Token)
+def change_email(
+    payload: schemas.EmailChange,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change the sign-in address, returning a token for the new one.
+
+    The JWT subject *is* the email, so the caller's existing token stops
+    resolving the moment this commits. Returning a replacement is not a
+    convenience -- without it the user is silently signed out mid-session.
+    """
+    new_email = payload.new_email.lower()
+    if new_email == current_user.email.lower():
+        raise HTTPException(status_code=400, detail="That's already your email address.")
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Password is incorrect.")
+
+    taken = db.query(models.User).filter(models.User.email == new_email).first()
+    if taken:
+        raise HTTPException(status_code=400, detail="An account with this email already exists.")
+
+    current_user.email = new_email
+    db.commit()
+    logger.info("Email changed for user id %s", current_user.id)
+    return schemas.Token(access_token=create_access_token(subject=new_email))

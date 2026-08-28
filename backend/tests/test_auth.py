@@ -106,3 +106,124 @@ def test_update_profile(client: TestClient, registered_user: dict) -> None:
     assert response.json()["target_titles"] == "Staff Engineer"
     # Unspecified fields are left alone rather than blanked.
     assert response.json()["full_name"] == registered_user["full_name"]
+
+
+# ---- Account changes ---------------------------------------------------
+
+
+def _register(client: TestClient) -> str:
+    return client.post("/api/auth/register", json=VALID).json()["access_token"]
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_the_existing_token_still_works_after_a_password_change(client: TestClient) -> None:
+    """No new token is issued, because none is needed: the JWT subject is the
+    email and nothing in it derives from the password."""
+    token = _register(client)
+    client.post(
+        "/api/auth/password",
+        json={"current_password": VALID["password"], "new_password": "brand-new-secret-1"},
+        headers=_auth(token),
+    )
+    assert client.get("/api/auth/me", headers=_auth(token)).status_code == 200
+
+
+def test_password_change_lets_you_log_in_with_the_new_password(client: TestClient) -> None:
+    token = _register(client)
+
+    changed = client.post(
+        "/api/auth/password",
+        json={"current_password": VALID["password"], "new_password": "brand-new-secret-1"},
+        headers=_auth(token),
+    )
+    assert changed.status_code == 204
+
+    old = client.post("/api/auth/login", data={"username": VALID["email"], "password": VALID["password"]})
+    assert old.status_code == 401
+    new = client.post("/api/auth/login", data={"username": VALID["email"], "password": "brand-new-secret-1"})
+    assert new.status_code == 200
+
+
+def test_password_change_requires_the_current_password(client: TestClient) -> None:
+    """A token left open on a shared machine must not be enough on its own."""
+    token = _register(client)
+
+    response = client.post(
+        "/api/auth/password",
+        json={"current_password": "not-the-password", "new_password": "brand-new-secret-1"},
+        headers=_auth(token),
+    )
+    assert response.status_code == 400
+    # The original password must still work.
+    assert (
+        client.post(
+            "/api/auth/login", data={"username": VALID["email"], "password": VALID["password"]}
+        ).status_code
+        == 200
+    )
+
+
+def test_password_change_rejects_a_too_short_password(client: TestClient) -> None:
+    token = _register(client)
+    response = client.post(
+        "/api/auth/password",
+        json={"current_password": VALID["password"], "new_password": "short"},
+        headers=_auth(token),
+    )
+    assert response.status_code == 422
+
+
+def test_email_change_returns_a_token_that_still_works(client: TestClient) -> None:
+    """The JWT subject is the email, so the old token stops resolving the
+    moment this commits -- without a replacement the user is signed out."""
+    token = _register(client)
+
+    response = client.post(
+        "/api/auth/email",
+        json={"new_email": "moved@example.com", "current_password": VALID["password"]},
+        headers=_auth(token),
+    )
+    assert response.status_code == 200
+    new_token = response.json()["access_token"]
+
+    me = client.get("/api/auth/me", headers=_auth(new_token))
+    assert me.status_code == 200
+    assert me.json()["email"] == "moved@example.com"
+
+
+def test_email_change_requires_the_password(client: TestClient) -> None:
+    token = _register(client)
+    response = client.post(
+        "/api/auth/email",
+        json={"new_email": "moved@example.com", "current_password": "wrong"},
+        headers=_auth(token),
+    )
+    assert response.status_code == 400
+
+
+def test_email_change_rejects_an_address_already_in_use(client: TestClient) -> None:
+    client.post("/api/auth/register", json={**VALID, "email": "taken@example.com"})
+    token = _register(client)
+
+    response = client.post(
+        "/api/auth/email",
+        json={"new_email": "taken@example.com", "current_password": VALID["password"]},
+        headers=_auth(token),
+    )
+    assert response.status_code == 400
+
+
+def test_address_and_phone_round_trip(client: TestClient) -> None:
+    token = _register(client)
+
+    client.patch(
+        "/api/auth/me",
+        json={"address": "1 Example Way, Seattle, WA 98101", "phone": "+1 555 0100"},
+        headers=_auth(token),
+    )
+    me = client.get("/api/auth/me", headers=_auth(token)).json()
+    assert me["address"] == "1 Example Way, Seattle, WA 98101"
+    assert me["phone"] == "+1 555 0100"
