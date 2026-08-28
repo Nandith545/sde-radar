@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from "react";
-import type { Job, JobStatus } from "../api";
+import type { Job, JobStatus, UserDocument } from "../api";
 
 /** The pipeline, in the order a job actually moves through it. */
 const COLUMNS: { status: JobStatus; label: string; blurb: string }[] = [
@@ -22,11 +22,17 @@ function columnFor(status: JobStatus): JobStatus | null {
 
 export default function KanbanBoard({
   jobs,
+  documents,
   onMove,
+  onAttach,
 }: {
   jobs: Job[];
+  documents: UserDocument[];
   onMove: (jobId: number, status: JobStatus) => void;
+  onAttach: (jobId: number, field: "resume_document_id" | "cover_letter_document_id", id: number) => void;
 }) {
+  const resumes = documents.filter((d) => d.kind === "resume");
+  const covers = documents.filter((d) => d.kind === "cover_letter");
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<JobStatus | null>(null);
 
@@ -97,6 +103,37 @@ export default function KanbanBoard({
                     {job.status === "rejected" && <option value="rejected">Rejected</option>}
                     <option value="new">Back to matches ↩</option>
                   </select>
+
+                  {/* Only from Applied onwards: before you have sent anything
+                      there is no "which version did I send" to record. */}
+                  {job.status !== "saved" && (resumes.length > 0 || covers.length > 0) && (
+                    <div className="kanban-docs">
+                      {resumes.length > 0 && (
+                        <select
+                          aria-label={`Resume sent for ${job.title}`}
+                          value={job.resume_document_id ?? 0}
+                          onChange={(e) => onAttach(job.id, "resume_document_id", Number(e.target.value))}
+                        >
+                          <option value={0}>Resume sent…</option>
+                          {resumes.map((d) => (
+                            <option key={d.id} value={d.id}>{d.label || d.filename}</option>
+                          ))}
+                        </select>
+                      )}
+                      {covers.length > 0 && (
+                        <select
+                          aria-label={`Cover letter sent for ${job.title}`}
+                          value={job.cover_letter_document_id ?? 0}
+                          onChange={(e) => onAttach(job.id, "cover_letter_document_id", Number(e.target.value))}
+                        >
+                          <option value={0}>Cover letter…</option>
+                          {covers.map((d) => (
+                            <option key={d.id} value={d.id}>{d.label || d.filename}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
                 </article>
               ))}
             </div>

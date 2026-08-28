@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
 import KanbanBoard from "../components/KanbanBoard";
-import type { Job, JobStatus, Stats, SourceStatus, PostedWithin } from "../api";
+import type { Job, JobStatus, Stats, SourceStatus, PostedWithin, UserDocument } from "../api";
 import JobCard from "../components/JobCard";
 import ResumeUpload from "../components/ResumeUpload";
 
@@ -46,6 +46,7 @@ export default function Dashboard() {
   // the pipeline of jobs already acted on. A job leaves one by entering the
   // other, so they are tabs rather than filters.
   const [view, setView] = useState<"matches" | "board">("matches");
+  const [documents, setDocuments] = useState<UserDocument[]>([]);
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
 
   const load = async () => {
@@ -61,6 +62,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.getSources().then(setSources).catch(() => setSources([]));
+    api.listDocuments().then(setDocuments).catch(() => setDocuments([]));
   }, []);
 
   // The age window is applied by the API, not in the browser, so changing it
@@ -262,7 +264,12 @@ export default function Dashboard() {
             Nothing on the board yet. Save a job from Matches and it appears here.
           </div>
         ) : (
-          <KanbanBoard jobs={trackedJobs} onMove={(id, status) => onUpdate(id, { status })} />
+          <KanbanBoard
+            jobs={trackedJobs}
+            documents={documents}
+            onMove={(id, status) => onUpdate(id, { status })}
+            onAttach={(id, field, value) => onUpdate(id, { [field]: value })}
+          />
         )
       ) : visibleJobs.length === 0 ? (
         <div className="empty-state">

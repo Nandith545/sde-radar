@@ -152,6 +152,50 @@ export async function getResume(): Promise<Resume | null> {
   }
 }
 
+// ---- Documents ----
+export type DocumentKind = "resume" | "cover_letter";
+
+export interface UserDocument {
+  id: number;
+  kind: DocumentKind;
+  label: string;
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+export async function listDocuments(): Promise<UserDocument[]> {
+  return request("/documents");
+}
+
+export async function uploadDocument(file: File, kind: DocumentKind, label: string): Promise<UserDocument> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", kind);
+  form.append("label", label);
+  return request("/documents", { method: "POST", body: form });
+}
+
+export async function deleteDocument(id: number): Promise<void> {
+  await request<void>(`/documents/${id}`, { method: "DELETE" });
+}
+
+/** The download endpoint needs the auth header, so it can't be a plain link. */
+export async function downloadDocument(doc: UserDocument): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`/api/documents/${doc.id}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new ApiError("Could not download that file.", res.status);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = doc.filename;
+  a.click();
+  // Revoking immediately can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 // ---- Jobs ----
 export type JobStatus = "new" | "saved" | "applied" | "interviewing" | "offer" | "rejected" | "archived";
 
@@ -173,6 +217,8 @@ export interface Job {
   flag: string | null;
   matches_preferences: boolean;
   mismatch_reason: string | null;
+  resume_document_id: number | null;
+  cover_letter_document_id: number | null;
   status: JobStatus;
   notes: string;
 }
@@ -204,7 +250,16 @@ export async function getStats(): Promise<Stats> {
   return request("/jobs/stats");
 }
 
-export async function updateMatch(jobId: number, payload: { status?: JobStatus; notes?: string }): Promise<Job> {
+export async function updateMatch(
+  jobId: number,
+  payload: {
+    status?: JobStatus;
+    notes?: string;
+    // 0 detaches; omitted leaves the existing link alone.
+    resume_document_id?: number;
+    cover_letter_document_id?: number;
+  },
+): Promise<Job> {
   return request(`/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify(payload) });
 }
 

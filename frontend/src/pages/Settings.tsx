@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
 import AccountSecurity from "../components/AccountSecurity";
+import DocumentLibrary from "../components/DocumentLibrary";
 import CityList from "../components/CityList";
 import { ApiError, type Seniority, type WorkMode } from "../api";
 
@@ -286,6 +287,7 @@ export default function Settings() {
       </form>
 
       <div className="settings-grid account-grid">
+        <DocumentLibrary />
         <AccountSecurity email={user.email} onEmailChanged={refreshUser} />
       </div>
     </div>
