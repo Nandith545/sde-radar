@@ -57,8 +57,7 @@ export default function AccountSecurity({ email, onEmailChanged }: { email: stri
     }
     setPwBusy(true);
     try {
-      const { access_token } = await api.changePassword(currentPassword, newPassword);
-      api.setToken(access_token, api.wasRemembered());
+      await api.changePassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");

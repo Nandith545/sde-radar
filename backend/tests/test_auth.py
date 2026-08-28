@@ -119,6 +119,18 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_the_existing_token_still_works_after_a_password_change(client: TestClient) -> None:
+    """No new token is issued, because none is needed: the JWT subject is the
+    email and nothing in it derives from the password."""
+    token = _register(client)
+    client.post(
+        "/api/auth/password",
+        json={"current_password": VALID["password"], "new_password": "brand-new-secret-1"},
+        headers=_auth(token),
+    )
+    assert client.get("/api/auth/me", headers=_auth(token)).status_code == 200
+
+
 def test_password_change_lets_you_log_in_with_the_new_password(client: TestClient) -> None:
     token = _register(client)
 
@@ -127,7 +139,7 @@ def test_password_change_lets_you_log_in_with_the_new_password(client: TestClien
         json={"current_password": VALID["password"], "new_password": "brand-new-secret-1"},
         headers=_auth(token),
     )
-    assert changed.status_code == 200
+    assert changed.status_code == 204
 
     old = client.post("/api/auth/login", data={"username": VALID["email"], "password": VALID["password"]})
     assert old.status_code == 401

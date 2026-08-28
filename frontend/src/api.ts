@@ -100,8 +100,11 @@ export async function login(email: string, password: string): Promise<{ access_t
   });
 }
 
-export async function changePassword(currentPassword: string, newPassword: string): Promise<{ access_token: string }> {
-  return request("/auth/password", {
+// Returns nothing. The existing token stays valid -- the JWT subject is the
+// email, and nothing in the token derives from the password -- so there is no
+// credential to hand back and none to store.
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request<void>("/auth/password", {
     method: "POST",
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });

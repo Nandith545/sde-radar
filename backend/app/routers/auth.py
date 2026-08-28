@@ -153,17 +153,24 @@ def update_me(
     return _user_out(current_user)
 
 
-@router.post("/password", response_model=schemas.Token)
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     payload: schemas.PasswordChange,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Change the password, returning a freshly issued token.
+    """Change the password. Returns no body.
 
     The current password is required even though the caller already holds a
     valid token: otherwise a session left open on a shared machine is enough
     to lock the real owner out of their own account.
+
+    Deliberately does not issue a new token. The JWT's subject is the email,
+    which hasn't changed, and the token carries nothing derived from the
+    password -- so the caller's existing one keeps working and a replacement
+    would be pure ceremony. It would also mean handing a credential back out
+    of a call that took a password as input, which is worth not doing when
+    the call achieves nothing.
     """
     if not verify_password(payload.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect.")
@@ -174,11 +181,10 @@ def change_password(
     db.commit()
     logger.info("Password changed for user id %s", current_user.id)
 
-    # Tokens here are stateless and carry no password reference, so existing
-    # ones stay valid for their full lifetime -- a change cannot revoke a
-    # session elsewhere. Real revocation needs a token version column or a
-    # denylist; noted, and deliberately not faked with a new token alone.
-    return schemas.Token(access_token=create_access_token(subject=current_user.email))
+    # Tokens are stateless and carry no password reference, so sessions
+    # elsewhere stay valid for their full lifetime. Real revocation needs a
+    # token version column or a denylist; noted, and deliberately not faked
+    # by minting a new token for this session alone.
 
 
 @router.post("/email", response_model=schemas.Token)
