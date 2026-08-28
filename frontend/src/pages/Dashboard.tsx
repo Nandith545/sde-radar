@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
-import type { Job, JobStatus, Stats } from "../api";
+import type { Job, JobStatus, Stats, SourceStatus } from "../api";
 import JobCard from "../components/JobCard";
 import ResumeUpload from "../components/ResumeUpload";
 
@@ -19,6 +19,7 @@ export default function Dashboard() {
   const { user, logout, refreshUser } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [sources, setSources] = useState<SourceStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
@@ -38,6 +39,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     load();
+    api.getSources().then(setSources).catch(() => setSources([]));
   }, []);
 
   const onUpdate = async (jobId: number, patch: { status?: JobStatus; notes?: string }) => {
@@ -93,6 +95,22 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {sources.length > 0 && (
+        <div className="connector-strip">
+          <span className="connector-label">Job boards:</span>
+          {sources.map((s) => (
+            <span
+              key={s.name}
+              className={`connector-pill${s.active ? " active" : " inactive"}`}
+              title={s.active ? `${s.name} connector is live` : `${s.name} connector needs API credentials`}
+            >
+              <span className="dot" />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {!user.has_resume && <ResumeUpload onUploaded={() => { refreshUser(); load(); }} />}
 

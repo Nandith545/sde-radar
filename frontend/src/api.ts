@@ -113,11 +113,21 @@ export interface Job {
   posted: string;
   url: string;
   skills: string[];
+  sources: string[];
   score: number;
   reason: string;
   flag: string | null;
   status: JobStatus;
   notes: string;
+}
+
+export interface SourceStatus {
+  name: string;
+  active: boolean;
+}
+
+export async function getSources(): Promise<SourceStatus[]> {
+  return request<SourceStatus[]>("/sources");
 }
 
 export interface Stats {

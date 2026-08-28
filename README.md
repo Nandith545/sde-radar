@@ -9,7 +9,7 @@ Built as a full-stack showcase project:
 
 - **Backend:** Python, FastAPI, SQLAlchemy, PostgreSQL, JWT auth (passlib/bcrypt)
 - **Frontend:** React + TypeScript (Vite), React Router
-- **Job data:** live listings via the [Adzuna Jobs API](https://developer.adzuna.com/) (free tier), with a bundled seed dataset so the app works immediately with zero external setup
+- **Job data:** live listings from four independent job-board connectors — [Adzuna](https://developer.adzuna.com/), [Jooble](https://jooble.org/api/about), [Remotive](https://remotive.com/), and [Arbeitnow](https://www.arbeitnow.com/) — merged into one pool with cross-source deduplication, plus a bundled seed dataset so the app works immediately with zero external setup
 - **Matching engine:** a transparent, explainable scoring heuristic — skill overlap between your resume and each posting, target-title and target-city bonuses, and automatic flags for junior-level or part-time/contract postings — not a black box
 - **Deploy target:** [Render](https://render.com) via a single Dockerfile + `render.yaml` blueprint (one web service + one managed Postgres database)
 
@@ -56,8 +56,14 @@ backend/
       skills.py                 skills taxonomy + extraction
       resume_parser.py           PDF/text → skills + years of experience
       matching.py                 the scoring engine
-      job_ingestion.py            Adzuna client + upsert logic
+      job_ingestion.py            orchestrates all connectors + upsert logic
+      dedup.py                     cross-source duplicate detection
       seed_jobs.py                  bundled fallback job pool
+      sources/
+        base.py                      RawJob shape + connector protocol
+        adzuna.py, jooble.py,         one module per job board
+        remotive.py, arbeitnow.py
+        salary_parse.py              free-text salary → structured range
   requirements.txt
 frontend/
   src/
@@ -99,18 +105,47 @@ Open the printed `localhost:5173` URL. Register an account, upload a resume
 (a plain-text or text-based PDF), and the dashboard will populate from the
 bundled seed job pool immediately.
 
-### Using live job data instead of the seed pool
+### Job board connectors + deduplication
 
-1. Sign up for a free API key at <https://developer.adzuna.com/> (a couple of
-   minutes, no credit card).
-2. Set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` in your `.env` (or Render
-   environment variables).
-3. The app pulls fresh listings on startup and every 6 hours automatically;
-   any signed-in user can also hit "Refresh jobs" in the dashboard to pull
-   listings for their own target city/titles on demand.
+The app pulls from four independent job boards and merges the results into
+one shared pool:
 
-Without these keys the app is still fully functional and demoable — it just
-uses the bundled 23-posting seed pool instead of live data.
+| Connector  | Needs an API key?                                          |
+|------------|-------------------------------------------------------------|
+| Adzuna     | Yes — free at <https://developer.adzuna.com/>               |
+| Jooble     | Yes — free at <https://jooble.org/api/about>                 |
+| Remotive   | No — always on                                               |
+| Arbeitnow  | No — always on                                               |
+
+1. To enable Adzuna and/or Jooble, set `ADZUNA_APP_ID` + `ADZUNA_APP_KEY`
+   and/or `JOOBLE_API_KEY` in your `.env` (or Render environment variables).
+   Each connector is independent — enable one, some, or all of them.
+2. The app pulls fresh listings from every configured connector on startup
+   and every 6 hours automatically; any signed-in user can also hit "Refresh
+   jobs" in the dashboard to pull listings for their own target city/titles
+   on demand. `GET /api/sources` reports which connectors are currently
+   active, and the dashboard shows the same thing as a status strip.
+3. **The same real posting often appears on more than one board** — the
+   ingestion pipeline (`job_ingestion.py` + `dedup.py`) catches this two
+   ways: an exact match on normalized company + title + city, and a fuzzy
+   title match (via `difflib`, scoped strictly to the same normalized
+   company so it never merges different companies) for wording differences
+   like "Sr. Software Engineer" vs "Senior Software Engineer". Matched
+   postings collapse into a single card, which lists every board it was
+   found on and keeps the best available data from each (e.g. a real salary
+   range from one source isn't overwritten by a blank one from another).
+
+Without any keys configured, the app still runs fully on Remotive +
+Arbeitnow (no setup needed) plus the bundled 23-posting seed pool.
+
+**Honest caveat:** the Jooble, Remotive, and Arbeitnow connectors are built
+against each provider's documented/public API shape, but weren't
+live-verified against real traffic while building this (the dev sandbox
+used had no outbound network access to third-party APIs). Every connector
+wraps its parsing in a per-item try/except so one unexpected field can't take
+down a whole refresh — check your Render logs after the first live deploy
+with real credentials, and open an issue/adjust the relevant `sources/*.py`
+file if a field name has drifted from what's coded.
 
 ---
 
@@ -134,10 +169,11 @@ uses the bundled 23-posting seed pool instead of live data.
    - a free Postgres database, wired to the web service via `DATABASE_URL`
    - an auto-generated `JWT_SECRET`
 
-3. Render will prompt for the two optional variables left blank in
-   `render.yaml` — `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`. Leave them empty to
-   launch on the seed data, or paste in free Adzuna credentials for live
-   listings.
+3. Render will prompt for the optional variables left blank in
+   `render.yaml` — `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `JOOBLE_API_KEY`.
+   Leave them empty to launch on Remotive + Arbeitnow + the seed pool, or
+   paste in free credentials for Adzuna and/or Jooble for broader live
+   coverage.
 
 4. Click **Apply**. First build takes a few minutes (it's compiling the React
    app and installing Python deps inside Docker). You'll get a public
@@ -152,6 +188,25 @@ it always-warm.
 
 ---
 
+## Testing
+
+There's no full pytest suite (noted below as a good next step), but two
+scripts exist and are worth running after any change to matching or
+ingestion:
+
+- **`backend/test_dedup.py`** — regression test for cross-source
+  deduplication. Feeds synthetic multi-board postings straight into the
+  ingestion pipeline and asserts duplicates collapse into one row with a
+  merged source list. Run with `./venv/bin/python test_dedup.py` (drops and
+  recreates every table on whatever `DATABASE_URL` is configured — point it
+  at a disposable dev database).
+- **`frontend/tests/smoke.mjs`** — Playwright end-to-end test covering the
+  full user journey (register → upload resume → see matches → change
+  status → reload → status persists → sign out) against a running instance.
+  See the comment at the top of the file for exact usage.
+
+---
+
 ## Known limitations / good next steps
 
 This is a real, working v1 — not a mockup — but there's an honest list of
@@ -161,5 +216,8 @@ if asked "what would you improve"):
 - **No database migrations** — tables are created with `Base.metadata.create_all()` at startup rather than Alembic migrations. Fine for a fresh deploy; a schema change later would need a manual migration path.
 - **No email verification / password reset flow.**
 - **Adzuna's free tier has a modest monthly call quota** — the 6-hour refresh schedule and search-term list in `job_ingestion.py` are tuned to stay well under it, but heavy multi-user traffic calling `/jobs/refresh` a lot would need rate-limiting.
+- **Jooble/Remotive/Arbeitnow connectors weren't live-verified** during development (no outbound network access in the build sandbox) — they're built against each provider's documented API shape with defensive per-item parsing, but are worth a log check after your first live deploy.
+- **Dedup is heuristic, not perfect** — exact-key + same-company fuzzy title matching catches the common cases (identical postings, minor wording differences) but won't catch a posting reworded enough to fall below the similarity threshold, and in rare cases could theoretically merge two genuinely different roles at the same company with near-identical titles and locations.
 - **Resume parsing is keyword-based, not LLM-based** — deliberate, so the app has no per-user inference cost or external AI dependency, but it will miss skills phrased in unusual ways.
 - **No "forgot password" / OAuth login** — email+password only, per the current scope.
+- **No automated pytest/CI suite** — the two scripts under [Testing](#testing) above cover the highest-risk logic (dedup, the full user journey) but aren't wired into a CI pipeline yet.

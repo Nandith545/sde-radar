@@ -65,6 +65,16 @@ export default function JobCard({
         <span>{job.job_type}</span>
         <span>Posted {fmtDate(job.posted)}</span>
       </div>
+      {job.sources && job.sources.length > 0 && (
+        <div className="sources">
+          {job.sources.map((s) => (
+            <span className="source-badge" key={s}>
+              {s}
+            </span>
+          ))}
+          {job.sources.length > 1 && <span className="source-note">seen on {job.sources.length} boards</span>}
+        </div>
+      )}
       {job.skills.length > 0 && (
         <div className="chips">
           {job.skills.map((s) => (

@@ -11,7 +11,8 @@ from fastapi.responses import FileResponse
 from .config import settings
 from .database import Base, engine, SessionLocal
 from .routers import auth, resume, jobs
-from .services.job_ingestion import seed_if_empty, refresh_from_adzuna
+from .services.job_ingestion import seed_if_empty, refresh_from_all_sources
+from .services.sources import active_sources, REGISTRY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,9 +23,7 @@ scheduler = BackgroundScheduler()
 def _refresh_job_pool():
     db = SessionLocal()
     try:
-        added = refresh_from_adzuna(db)
-        if added:
-            logger.info("Scheduled Adzuna refresh: %d listings added/updated.", added)
+        refresh_from_all_sources(db)
     finally:
         db.close()
 
@@ -40,12 +39,13 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    if settings.adzuna_app_id and settings.adzuna_app_key:
+    sources = active_sources()
+    if sources:
         scheduler.add_job(_refresh_job_pool, "interval", hours=6, id="job_refresh", replace_existing=True)
         scheduler.start()
-        logger.info("Adzuna live refresh scheduled every 6 hours.")
+        logger.info("Live refresh scheduled every 6 hours. Active connectors: %s", ", ".join(sources))
     else:
-        logger.info("No Adzuna credentials set — running on the bundled seed job pool only.")
+        logger.info("No job-board connectors configured — running on the bundled seed job pool only.")
 
     yield
 
@@ -69,6 +69,12 @@ app.include_router(jobs.router)
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/sources")
+def sources_status():
+    active = set(active_sources())
+    return [{"name": mod.NAME, "active": mod.NAME in active} for mod in REGISTRY]
 
 
 # ---- Serve the built React frontend (single-service deploy) ----------

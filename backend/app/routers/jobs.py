@@ -5,9 +5,29 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..services.matching import score_job
-from ..services.job_ingestion import refresh_from_adzuna
+from ..services.job_ingestion import refresh_from_all_sources
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+def _source_names(job: models.JobListing) -> list[str]:
+    names = []
+    for entry in job.sources or []:
+        name = entry.get("name")
+        if name and name not in names:
+            names.append(name)
+    return names or [job.source]
+
+
+def _to_job_out(job: models.JobListing, status: models.StatusEnum, notes: str, result) -> schemas.JobOut:
+    return schemas.JobOut(
+        id=job.id, title=job.title, company=job.company, location=job.location,
+        comp_min=job.comp_min, comp_max=job.comp_max, comp_unit=job.comp_unit,
+        job_type=job.job_type, posted=job.posted, url=job.url, skills=job.skills,
+        sources=_source_names(job),
+        score=result.score, reason=result.reason, flag=result.flag,
+        status=status, notes=notes,
+    )
 
 
 def _matched_jobs(db: Session, user: models.User) -> list[schemas.JobOut]:
@@ -23,13 +43,7 @@ def _matched_jobs(db: Session, user: models.User) -> list[schemas.JobOut]:
         existing = match_map.get(job.id)
         status = existing.status if existing else models.StatusEnum.new
         notes = existing.notes if existing else ""
-        out.append(schemas.JobOut(
-            id=job.id, title=job.title, company=job.company, location=job.location,
-            comp_min=job.comp_min, comp_max=job.comp_max, comp_unit=job.comp_unit,
-            job_type=job.job_type, posted=job.posted, url=job.url, skills=job.skills,
-            score=result.score, reason=result.reason, flag=result.flag,
-            status=status, notes=notes,
-        ))
+        out.append(_to_job_out(job, status, notes, result))
     out.sort(key=lambda j: -j.score)
     return out
 
@@ -74,17 +88,10 @@ def update_match(job_id: int, payload: schemas.MatchUpdate, current_user: models
 
     resume = db.query(models.Resume).filter(models.Resume.user_id == current_user.id).first()
     result = score_job(job, current_user, resume)
-    return schemas.JobOut(
-        id=job.id, title=job.title, company=job.company, location=job.location,
-        comp_min=job.comp_min, comp_max=job.comp_max, comp_unit=job.comp_unit,
-        job_type=job.job_type, posted=job.posted, url=job.url, skills=job.skills,
-        score=result.score, reason=result.reason, flag=result.flag,
-        status=match.status, notes=match.notes,
-    )
+    return _to_job_out(job, match.status, match.notes, result)
 
 
 @router.post("/refresh")
 def refresh_jobs(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     titles = [t.strip() for t in (current_user.target_titles or "").split(",") if t.strip()] or None
-    added = refresh_from_adzuna(db, where=current_user.target_city, search_terms=titles)
-    return {"added_or_updated": added}
+    return refresh_from_all_sources(db, where=current_user.target_city, search_terms=titles)

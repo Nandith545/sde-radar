@@ -51,7 +51,8 @@ class JobListing(Base):
     __tablename__ = "job_listings"
 
     id = Column(Integer, primary_key=True, index=True)
-    source = Column(String(50), nullable=False, default="seed")  # "adzuna" | "seed"
+    source = Column(String(50), nullable=False, default="seed")  # first source this was seen on
+    sources = Column(JSON, nullable=False, default=list)  # every board this posting was matched across
     external_id = Column(String(255), unique=True, index=True, nullable=False)
     title = Column(String(500), nullable=False)
     company = Column(String(255), nullable=False, default="")
@@ -64,6 +65,9 @@ class JobListing(Base):
     posted = Column(String(20), nullable=False, default="")  # ISO date string
     url = Column(String(1000), nullable=False, default="")
     skills = Column(JSON, nullable=False, default=list)  # list[str] canonical skill tags
+    dedup_key = Column(String(700), index=True, nullable=False, default="")
+    company_norm = Column(String(255), index=True, nullable=False, default="")
+    title_norm = Column(String(500), nullable=False, default="")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 

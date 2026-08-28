@@ -1,12 +1,16 @@
+"""Orchestrates pulling listings from every configured job-board connector,
+deduplicating across them, and upserting into the shared job pool.
+"""
 import logging
 
-import httpx
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from .. import models
+from .dedup import find_duplicate, make_dedup_key, normalize_company, normalize_title
 from .skills import extract_skills
 from .seed_jobs import SEED_JOBS
+from .sources import REGISTRY, active_sources
+from .sources.base import RawJob
 
 logger = logging.getLogger(__name__)
 
@@ -19,98 +23,130 @@ DEFAULT_SEARCH_TERMS = [
 ]
 
 
-def _upsert_job(db: Session, *, source: str, external_id: str, title: str, company: str,
-                 location: str, description: str, comp_min, comp_max, comp_unit: str,
-                 job_type: str, posted: str, url: str) -> None:
-    existing = db.query(models.JobListing).filter(models.JobListing.external_id == external_id).first()
-    tags = extract_skills(f"{title}\n{description}")
-    if existing:
-        existing.title = title
-        existing.company = company
-        existing.location = location
-        existing.description = description
-        existing.comp_min = comp_min
-        existing.comp_max = comp_max
-        existing.comp_unit = comp_unit
-        existing.job_type = job_type
-        existing.posted = posted
-        existing.url = url
-        existing.skills = tags
-    else:
-        db.add(models.JobListing(
-            source=source, external_id=external_id, title=title, company=company,
-            location=location, description=description, comp_min=comp_min, comp_max=comp_max,
-            comp_unit=comp_unit, job_type=job_type, posted=posted, url=url, skills=tags,
-        ))
+def _apply_fields(job: models.JobListing, raw: RawJob) -> None:
+    """Fill in fields on an existing/new row from a freshly-fetched RawJob,
+    without clobbering better data that's already there (e.g. don't erase a
+    real comp range with a blank one from a source that lacks salary data).
+    """
+    # Keep the canonical title/company/location stable once set, so a posting
+    # doesn't "flap" in the UI (e.g. "Senior Software Engineer" <-> "Sr.
+    # Software Engineer") just because a different connector's wording
+    # happened to be ingested last. Only fill these in on first sight.
+    job.title = job.title or raw.title
+    job.company = job.company or raw.company
+    job.location = job.location or raw.location
+    if raw.description and len(raw.description) > len(job.description or ""):
+        job.description = raw.description
+    if raw.comp_min is not None and job.comp_min is None:
+        job.comp_min = raw.comp_min
+        job.comp_max = raw.comp_max
+        job.comp_unit = raw.comp_unit
+    job.job_type = job.job_type or raw.job_type
+    if raw.posted and (not job.posted or raw.posted > job.posted):
+        job.posted = raw.posted
+    job.url = job.url or raw.url
+    job.dedup_key = make_dedup_key(job.title, job.company, job.location)
+    job.company_norm = normalize_company(job.company)
+    job.title_norm = normalize_title(job.title)
+    job.skills = extract_skills(f"{job.title}\n{job.description}")
+
+
+def _record_source(job: models.JobListing, raw: RawJob) -> None:
+    entries = list(job.sources or [])
+    if not any(e.get("name") == raw.source and e.get("external_id") == raw.external_id for e in entries):
+        entries.append({"name": raw.source, "external_id": raw.external_id, "url": raw.url})
+    job.sources = entries
+
+
+def _ingest_raw_jobs(db: Session, raw_jobs: list[RawJob]) -> dict:
+    # Build a fast lookup of every (source, external_id) pair we already know
+    # about, across every canonical job row -- covers the case where a
+    # posting was previously merged in as a secondary source.
+    by_source_id: dict[tuple[str, str], models.JobListing] = {}
+    for job in db.query(models.JobListing).all():
+        for entry in job.sources or []:
+            by_source_id[(entry.get("name"), entry.get("external_id"))] = job
+
+    added = 0
+    merged = 0
+    updated = 0
+
+    for raw in raw_jobs:
+        key = (raw.source, raw.external_id)
+        existing = by_source_id.get(key)
+        if existing:
+            _apply_fields(existing, raw)
+            _record_source(existing, raw)
+            updated += 1
+            continue
+
+        duplicate = find_duplicate(db, title=raw.title, company=raw.company, location=raw.location)
+        if duplicate:
+            _apply_fields(duplicate, raw)
+            _record_source(duplicate, raw)
+            by_source_id[key] = duplicate
+            merged += 1
+            continue
+
+        job = models.JobListing(external_id=f"{raw.source}:{raw.external_id}", source=raw.source, sources=[])
+        _apply_fields(job, raw)
+        _record_source(job, raw)
+        db.add(job)
+        db.flush()  # assign an id so later fuzzy-dedup lookups in this same run can see it
+        by_source_id[key] = job
+        added += 1
+
+    db.commit()
+    return {"added": added, "merged_into_existing": merged, "same_source_updates": updated}
 
 
 def seed_if_empty(db: Session) -> int:
     """Load the bundled seed dataset if the job pool is empty (first boot,
-    or no Adzuna credentials configured). Safe to call repeatedly."""
-    count = db.query(models.JobListing).count()
-    if count > 0:
+    or no connectors configured at all). Safe to call repeatedly."""
+    if db.query(models.JobListing).count() > 0:
         return 0
-    for job in SEED_JOBS:
-        _upsert_job(
-            db, source="seed", external_id=job["external_id"], title=job["title"],
-            company=job["company"], location=job["location"], description=job["description"],
-            comp_min=job["comp_min"], comp_max=job["comp_max"], comp_unit=job["comp_unit"],
-            job_type=job["job_type"], posted=job["posted"], url=job["url"],
+    raw_jobs = [
+        RawJob(
+            source="seed", external_id=job["external_id"], title=job["title"], company=job["company"],
+            location=job["location"], description=job["description"], comp_min=job["comp_min"],
+            comp_max=job["comp_max"], comp_unit=job["comp_unit"], job_type=job["job_type"],
+            posted=job["posted"], url=job["url"],
         )
-    db.commit()
-    return len(SEED_JOBS)
+        for job in SEED_JOBS
+    ]
+    result = _ingest_raw_jobs(db, raw_jobs)
+    return result["added"]
 
 
-def refresh_from_adzuna(db: Session, *, what: str | None = None, where: str = "Seattle, WA",
-                         search_terms: list[str] | None = None) -> int:
-    """Pull fresh listings from the Adzuna Jobs API and upsert them into the
-    shared job pool. No-ops (returns 0) if no API credentials are configured.
+def refresh_from_all_sources(db: Session, *, search_terms: list[str] | None = None,
+                              where: str = "Seattle, WA") -> dict:
+    """Pull fresh listings from every connector that has credentials
+    configured, dedup them against each other and the existing pool, and
+    upsert. No-ops gracefully (returns zero counts) if nothing is
+    configured -- the seed pool stays in place.
     """
-    if not settings.adzuna_app_id or not settings.adzuna_app_key:
-        logger.info("Adzuna credentials not configured; skipping live ingestion.")
-        return 0
+    terms = search_terms or DEFAULT_SEARCH_TERMS
+    sources_used = active_sources()
+    if not sources_used:
+        logger.info("No job-board connectors configured; staying on the seed pool.")
+        return {"added": 0, "merged_into_existing": 0, "same_source_updates": 0, "sources_used": []}
 
-    terms = search_terms or ([what] if what else DEFAULT_SEARCH_TERMS)
-    added = 0
-    with httpx.Client(timeout=15.0) as client:
-        for term in terms:
-            try:
-                resp = client.get(
-                    "https://api.adzuna.com/v1/api/jobs/us/search/1",
-                    params={
-                        "app_id": settings.adzuna_app_id,
-                        "app_key": settings.adzuna_app_key,
-                        "what": term,
-                        "where": where,
-                        "results_per_page": 20,
-                        "content-type": "application/json",
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            except httpx.HTTPError as exc:
-                logger.warning("Adzuna request failed for '%s': %s", term, exc)
-                continue
+    raw_jobs: list[RawJob] = []
+    for module in REGISTRY:
+        if not module.is_configured():
+            continue
+        try:
+            fetched = module.fetch(terms, where)
+        except Exception as exc:  # noqa: BLE001 - one connector failing shouldn't take down a refresh
+            logger.warning("[%s] connector raised an exception, skipping: %s", module.NAME, exc)
+            continue
+        logger.info("[%s] fetched %d listings", module.NAME, len(fetched))
+        raw_jobs.extend(fetched)
 
-            for item in data.get("results", []):
-                external_id = f"adzuna-{item.get('id')}"
-                salary_min = item.get("salary_min")
-                salary_max = item.get("salary_max")
-                _upsert_job(
-                    db,
-                    source="adzuna",
-                    external_id=external_id,
-                    title=item.get("title", "").strip() or "Untitled role",
-                    company=(item.get("company") or {}).get("display_name", ""),
-                    location=(item.get("location") or {}).get("display_name", where),
-                    description=item.get("description", ""),
-                    comp_min=salary_min,
-                    comp_max=salary_max,
-                    comp_unit="year",
-                    job_type=(item.get("contract_time") or "full_time").replace("_", "-"),
-                    posted=(item.get("created") or "")[:10],
-                    url=item.get("redirect_url", ""),
-                )
-                added += 1
-    db.commit()
-    return added
+    result = _ingest_raw_jobs(db, raw_jobs)
+    result["sources_used"] = sources_used
+    logger.info(
+        "Refresh complete: %d new, %d merged into existing postings, %d same-source updates (sources: %s)",
+        result["added"], result["merged_into_existing"], result["same_source_updates"], ", ".join(sources_used),
+    )
+    return result

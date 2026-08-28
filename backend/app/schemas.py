@@ -65,6 +65,7 @@ class JobOut(BaseModel):
     posted: str
     url: str
     skills: list[str]
+    sources: list[str]
     score: int
     reason: str
     flag: str | None

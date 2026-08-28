@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     adzuna_app_id: str = os.getenv("ADZUNA_APP_ID", "")
     adzuna_app_key: str = os.getenv("ADZUNA_APP_KEY", "")
+    jooble_api_key: str = os.getenv("JOOBLE_API_KEY", "")
 
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 

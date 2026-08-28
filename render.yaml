@@ -24,3 +24,5 @@ services:
         sync: false
       - key: ADZUNA_APP_KEY
         sync: false
+      - key: JOOBLE_API_KEY
+        sync: false
