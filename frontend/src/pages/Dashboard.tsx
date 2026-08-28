@@ -112,7 +112,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {!user.has_resume && <ResumeUpload onUploaded={() => { refreshUser(); load(); }} />}
+      {!user.has_resume && (
+        <ResumeUpload
+          city={user.target_city}
+          titles={user.target_titles}
+          onUploaded={() => { refreshUser(); load(); }}
+        />
+      )}
 
       {stats && (
         <div className="stats">
