@@ -115,3 +115,26 @@ button{cursor:pointer;}
 
 .empty-state{padding:60px 20px; text-align:center; color:var(--text-muted); background:var(--surface); border:1px dashed var(--border); border-radius:12px;}
 .spinner-wrap{display:flex; align-items:center; justify-content:center; padding:60px; color:var(--text-muted);}
+
+/* ---- Responsive ---------------------------------------------------------
+   The stats row is a fixed 5-column grid, which overflows the viewport on a
+   phone (the last two cards get clipped off-screen). Reflow it, and stack
+   the topbar/controls so nothing forces horizontal scrolling. */
+@media (max-width: 640px){
+  .shell{padding:20px 14px 60px;}
+
+  .topbar{flex-direction:column; align-items:flex-start; gap:14px;}
+  .user-menu{width:100%; flex-wrap:wrap;}
+
+  .stats{grid-template-columns:repeat(2,1fr);}
+  /* "Tracked" and "Avg match" are the two you actually scan for, so let the
+     first card span full width rather than leaving a ragged orphan. */
+  .stats .stat:first-child{grid-column:1 / -1;}
+
+  .controls{flex-direction:column; align-items:stretch;}
+  .controls input[type="search"], .controls select{width:100%;}
+
+  .card-actions{flex-direction:column; align-items:stretch;}
+  .right-actions{display:flex; gap:8px;}
+  .right-actions .btn, .right-actions .btn-link{flex:1; text-align:center;}
+}

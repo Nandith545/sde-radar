@@ -186,9 +186,15 @@ the history back later — see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 1. **In Render**, click **New → Blueprint**, connect your GitHub account, and
    pick the repo you just pushed. Render reads `render.yaml` automatically
    and provisions:
-   - a free web service built from the `Dockerfile`
-   - a free Postgres database, wired to the web service via `DATABASE_URL`
-   - an auto-generated `JWT_SECRET`
+   - `sde-radar` — the production web service, from the `main` branch
+   - `sde-radar-staging` — the staging web service, from the `staging` branch
+   - a free Postgres database, wired to **production** via `DATABASE_URL`
+   - auto-generated `JWT_SECRET`s for both
+
+   Staging runs on SQLite rather than its own database, because Render's free
+   tier allows only one free Postgres per workspace. Its data resets on every
+   deploy — fine for a test environment, and it means staging never touches
+   production data.
 
 2. Render will prompt for the optional variables left blank in
    `render.yaml` — `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `JOOBLE_API_KEY`.
@@ -222,13 +228,29 @@ it always-warm.
 
 ## The pipeline
 
+Three environments, each catching something different:
+
+```
+  ./scripts/verify.sh          git push origin staging       merge PR -> main
+  ───────────────────►         ──────────────────────►       ──────────────────►
+  Local (~60s)                 Staging (real URL)            Production
+  scratch Postgres/SQLite      SQLite, resets each deploy    Free Postgres
+  tests + lint + build         click through the real UI     deploys only if CI passed
+  + browser e2e + screenshots  on desktop and phone
+```
+
+`./scripts/verify.sh` is the one to remember — it runs everything CI runs, in
+about a minute, and leaves desktop + mobile screenshots in
+`.verify-artifacts/`. See [CONTRIBUTING.md](CONTRIBUTING.md#the-three-environments)
+for the full promote flow.
+
 Everything under `.github/` — what runs, when, and why:
 
 | Workflow | Triggers | What it does |
 |----------|----------|--------------|
-| `ci.yml` | every push to `main`, every PR | Backend dedup test against a real Postgres 16 service; frontend lint + type-check + production build; full Playwright end-to-end journey (register → upload resume → match → status change → reload → sign out) against the real stack |
+| `ci.yml` | every push to `main`/`staging`, every PR | Backend dedup test against a real Postgres 16 service; frontend lint + type-check + production build; full Playwright end-to-end journey (register → upload resume → match → status change → reload → sign out) against the real stack |
 | `security.yml` | pushes, PRs, weekly Monday scan | CodeQL static analysis for Python and TypeScript (results in the Security tab); `pip-audit` + `npm audit` for known CVEs in dependencies |
-| `deploy.yml` | after CI succeeds on `main` | Fires the Render deploy hook. Skipped automatically if CI failed |
+| `deploy.yml` | after CI succeeds on `main` | Fires the Render deploy hook for production. Skipped automatically if CI failed. Staging deploys itself on push, ungated |
 | `dependabot.yml` | weekly / monthly | Opens grouped dependency-update PRs for pip, npm, GitHub Actions and Docker — each one runs through the same CI before you merge it |
 
 A few deliberate choices worth knowing:

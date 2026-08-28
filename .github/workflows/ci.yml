@@ -1,12 +1,13 @@
 name: CI
 
-# Runs on every push to main and every pull request targeting main, so no
-# change reaches production without the full suite passing first.
+# Runs on every push to main or staging, and every pull request targeting
+# them, so no change reaches either environment without the full suite
+# passing first.
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   # Lets you re-run the pipeline by hand from the Actions tab.
   workflow_dispatch:
 

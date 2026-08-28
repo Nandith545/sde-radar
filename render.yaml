@@ -1,3 +1,17 @@
+# Render Blueprint: two environments from one repo.
+#
+#   production  <- `main` branch,    deployed only after CI passes
+#   staging     <- `staging` branch, deployed automatically on every push
+#
+# Render's free tier allows only ONE free Postgres per workspace, so
+# production gets it and staging runs on SQLite inside the container
+# instead. That's a deliberate trade-off, not an oversight: staging's job is
+# to let you click through the real UI on a real URL before promoting to
+# production, and CI already runs the test suite against a real Postgres 16
+# on every PR. The catch is that staging's data resets on every deploy and
+# restart -- which for a test environment is arguably a feature, since you
+# always start from the clean seed pool.
+
 databases:
   - name: sderadar-db
     plan: free
@@ -5,16 +19,18 @@ databases:
     user: sderadar
 
 services:
+  # ---- Production -------------------------------------------------------
   - type: web
     name: sde-radar
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    branch: main
     healthCheckPath: /api/health
     # Deploys are triggered by the GitHub Actions "Deploy" workflow after CI
     # passes on main -- not automatically on every push. See
-    # .github/workflows/deploy.yml and the "Deploy pipeline" section of the
-    # README for the one-time RENDER_DEPLOY_HOOK secret setup.
+    # .github/workflows/deploy.yml and the "Deploying to Render" section of
+    # the README for the one-time RENDER_DEPLOY_HOOK secret setup.
     autoDeploy: false
     envVars:
       - key: DATABASE_URL
@@ -31,3 +47,29 @@ services:
         sync: false
       - key: JOOBLE_API_KEY
         sync: false
+
+  # ---- Staging ----------------------------------------------------------
+  - type: web
+    name: sde-radar-staging
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    branch: staging
+    healthCheckPath: /api/health
+    # Staging deploys on every push to `staging` -- fast feedback is the
+    # whole point of a test environment, so it isn't gated.
+    autoDeploy: true
+    envVars:
+      # Explicit SQLite rather than relying on the implicit fallback in
+      # config.py, so it's obvious to anyone reading this what staging runs
+      # on. Ephemeral: wiped on every deploy and restart.
+      - key: DATABASE_URL
+        value: sqlite:////var/tmp/sde-radar-staging.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "*"
+      # Left unset on purpose: staging runs on the keyless Remotive and
+      # Arbeitnow connectors plus the bundled seed pool, so it never spends
+      # your Adzuna/Jooble free-tier quota. Add them here if you
+      # specifically need to test a keyed connector.

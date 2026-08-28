@@ -71,23 +71,32 @@ forever if you don't write it down.
 
 ### 3. Run the checks before you push
 
-Same things CI will run — catching them locally is faster than waiting on
-a red build:
+One command runs everything CI runs — finding a break in ~60 seconds at your
+desk beats finding it in ~4 minutes after you've pushed:
 
 ```bash
-# Backend: dedup/ingestion regression test
-cd backend && ./venv/bin/python test_dedup.py
+./scripts/verify.sh
+```
 
-# Frontend: lint + type-check + build
-cd frontend && npm run lint && npm run build
+It picks a scratch database (Postgres if one is reachable, otherwise a
+throwaway SQLite file), runs the dedup regression test, lints and builds the
+frontend, boots the server, drives a real browser through the whole user
+journey, and drops screenshots — desktop and phone-sized — into
+`.verify-artifacts/`. Look at those: the mobile shot catches layout
+regressions that are invisible in a desktop browser window.
 
-# End-to-end (needs the backend running on :8000)
+If you'd rather run the pieces individually:
+
+```bash
+cd backend  && ./venv/bin/python test_dedup.py          # dedup tests
+cd frontend && npm run lint && npm run build            # lint + type-check
 cd frontend && BASE_URL=http://localhost:8000 npm run test:e2e
 ```
 
 ⚠️ `test_dedup.py` **drops and recreates every table** on whatever
-`DATABASE_URL` points at. Point it at a scratch database, never at anything
-you care about.
+`DATABASE_URL` points at. `verify.sh` handles this safely by creating its own
+scratch database; if you run the test directly, point it somewhere
+disposable.
 
 ### 4. Push and open a pull request
 
@@ -103,11 +112,59 @@ answering its questions is what makes the change reviewable later.
 
 Every PR runs: backend tests against a real Postgres, frontend lint/build,
 the Playwright end-to-end journey, and CodeQL security analysis. Merge when
-it's green. Merging to `main` triggers a production deploy automatically.
+it's green.
 
 **Use "Squash and merge."** Your ten "wip" commits collapse into one clean
-commit on `main`, so the history reads as one entry per change instead of a
-stream of noise.
+commit, so the history reads as one entry per change instead of a stream of
+noise.
+
+---
+
+## The three environments
+
+There are three places your code runs, and they exist to catch different
+things:
+
+| Where | How you get there | Database | Catches |
+|-------|-------------------|----------|---------|
+| **Local** (`./scripts/verify.sh`) | run it | scratch Postgres or SQLite | Broken tests, type errors, layout regressions — in about a minute |
+| **Staging** (`staging` branch) | `git push origin staging` | SQLite, wiped on each deploy | Anything that only shows up in a real deployed container, on a real URL, on your actual phone |
+| **Production** (`main` branch) | merge to `main`, after CI passes | Free Postgres, persistent | — |
+
+### Promoting a change
+
+```bash
+# 1. Local check
+./scripts/verify.sh
+
+# 2. Push your branch, open a PR, let CI run
+git push -u origin feat/company-filter
+
+# 3. Try it on staging (deploys automatically, ~3-5 min)
+git checkout staging && git merge feat/company-filter && git push
+#    -> https://sde-radar-staging.onrender.com  (click through it, on a phone too)
+
+# 4. Happy? Merge the PR into main. CI runs again, then production deploys.
+```
+
+Staging is deliberately ungated — it deploys on every push, because fast
+feedback is the entire point of a test environment. Production is the
+opposite: it only deploys after the full suite goes green.
+
+Two things to know about staging:
+
+- **Its data resets on every deploy and restart.** It runs on SQLite in an
+  ephemeral container (Render's free tier only allows one free Postgres, and
+  production has it). For a test environment this is mostly a feature — you
+  always start from the clean seed pool — but don't put anything there you
+  expect to still exist tomorrow.
+- **It's a free instance, so it sleeps.** The first request after ~15 minutes
+  of inactivity takes 30–50 seconds to wake up. That's the free tier, not
+  your change being slow.
+
+Because staging runs SQLite and production runs Postgres, staging can't catch
+a Postgres-specific bug. That's what CI is for — it runs the test suite
+against a real Postgres 16 on every PR.
 
 ---
 
