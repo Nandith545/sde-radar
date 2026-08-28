@@ -8,6 +8,7 @@ single-user SDE Radar prototype presented its matches.
 from dataclasses import dataclass
 
 from ..models import JobListing, Resume, User
+from .job_facets import infer_country, infer_work_mode, normalize_country
 
 SENIOR_WORDS = ["senior", "staff", "principal", "lead", "l5", "l6", "sde ii", "sde2", "sde 2", "iii", "iv"]
 JUNIOR_WORDS = ["junior", "jr.", "jr ", "entry level", "intern", "internship", "new grad"]
@@ -49,6 +50,34 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
         score += 8
 
     flag_parts = []
+
+    # Work mode and country are inferred from free text, so both only ever
+    # act on a confident reading. "unknown" leaves the score untouched rather
+    # than penalising a posting we simply could not classify -- a job hidden
+    # for being unreadable is worse than one shown without a bonus.
+    mode_hit = False
+    if user.work_mode:
+        job_mode = infer_work_mode(job.location or "", job.title or "", job.description or "")
+        if job_mode == user.work_mode:
+            score += 10
+            mode_hit = True
+        elif job_mode != "unknown":
+            score -= 12
+            flag_parts.append(f"This looks {job_mode}, and you asked for {user.work_mode}.")
+
+    if user.target_country:
+        wanted = normalize_country(user.target_country)
+        job_country = infer_country(job.location or "")
+        # A remote role is not really "in" a country for our purposes, so it
+        # is never flagged as being in the wrong one.
+        if (
+            job_country != "unknown"
+            and wanted
+            and job_country != wanted
+            and infer_work_mode(job.location or "", job.title or "") != "remote"
+        ):
+            score -= 15
+            flag_parts.append(f"This looks like it's in {job_country.title()}, not {user.target_country}.")
     if any(w in title_l for w in PART_TIME_WORDS) or (job.job_type or "").lower() in (
         "part-time",
         "contract",
@@ -77,6 +106,8 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
         )
         if title_hit:
             reason += " Title matches one of your target roles."
+        if mode_hit:
+            reason += f" It's {user.work_mode}, which is what you asked for."
     elif title_hit:
         reason = "Title matches one of your target roles, but no specific skill overlap was detected in the description."
     else:

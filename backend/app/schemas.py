@@ -1,4 +1,5 @@
 import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -24,21 +25,28 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+WorkMode = Literal["", "remote", "hybrid", "onsite"]
+
+
 class UserOut(BaseModel):
     id: int
     email: str
     full_name: str
     target_city: str
     target_titles: str
+    target_country: str
+    work_mode: WorkMode
     has_resume: bool
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
-    target_city: str | None = None
-    target_titles: str | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+    target_city: str | None = Field(default=None, max_length=255)
+    target_titles: str | None = Field(default=None, max_length=500)
+    target_country: str | None = Field(default=None, max_length=100)
+    work_mode: WorkMode | None = None
 
 
 # ---- Resume -------------------------------------------------------------

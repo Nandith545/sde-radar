@@ -44,6 +44,17 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     target_city: Mapped[str] = mapped_column(String(255), default="Seattle, WA")
     target_titles: Mapped[str] = mapped_column(String(500), default="Software Engineer")
+    target_country: Mapped[str] = mapped_column(String(100), default="")
+    """Free text, matched against a job's location by alias. Empty = anywhere."""
+
+    work_mode: Mapped[str] = mapped_column(String(20), default="")
+    """"remote" | "hybrid" | "onsite", or empty for no preference.
+
+    Deliberately a plain string rather than an Enum: the column takes a small
+    closed set, but adding a second `str, enum.Enum` would trip the same
+    UP042 lint that already blocks the dependency group, and Pydantic's
+    Literal already rejects anything else at the API boundary.
+    """
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     resume: Mapped["Resume | None"] = relationship(

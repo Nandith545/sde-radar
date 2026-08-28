@@ -1,4 +1,5 @@
 import logging
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -30,6 +31,19 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _work_mode(value: str) -> schemas.WorkMode:
+    """Read the plain-string column as the closed set the API promises.
+
+    Pydantic guards writes, but the column itself is a free String, so a value
+    written outside the API -- a fixture, a manual edit, a future migration --
+    would otherwise 500 every read of this user. Anything unrecognised reads
+    as "no preference", which is the same thing an empty column means.
+    """
+    if value in ("remote", "hybrid", "onsite"):
+        return cast(schemas.WorkMode, value)
+    return ""
+
+
 def _user_out(user: models.User) -> schemas.UserOut:
     return schemas.UserOut(
         id=user.id,
@@ -37,6 +51,8 @@ def _user_out(user: models.User) -> schemas.UserOut:
         full_name=user.full_name,
         target_city=user.target_city,
         target_titles=user.target_titles,
+        target_country=user.target_country,
+        work_mode=_work_mode(user.work_mode),
         has_resume=user.resume is not None,
     )
 
@@ -108,6 +124,10 @@ def update_me(
         current_user.target_city = payload.target_city
     if payload.target_titles is not None:
         current_user.target_titles = payload.target_titles
+    if payload.target_country is not None:
+        current_user.target_country = payload.target_country
+    if payload.work_mode is not None:
+        current_user.work_mode = payload.work_mode
     db.commit()
     db.refresh(current_user)
     return _user_out(current_user)
