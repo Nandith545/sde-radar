@@ -1,0 +1,87 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Vulnerabilities get disclosed on their own schedule, not yours -- so
+  # re-scan weekly even when nobody has pushed code.
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------
+  # CodeQL: static analysis for security bugs in your own code (SQL
+  # injection, unsafe deserialization, path traversal, etc). Results land
+  # in the repo's Security -> Code scanning tab.
+  # -------------------------------------------------------------------
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-and-quality
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  # -------------------------------------------------------------------
+  # Dependency audit: flags known CVEs in third-party packages.
+  # Informational -- it reports but doesn't fail the build, so a fresh
+  # advisory in a transitive dep can't block an unrelated hotfix.
+  # Dependabot (see .github/dependabot.yml) opens the actual fix PRs.
+  # -------------------------------------------------------------------
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Audit Python dependencies
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit --requirement requirements.txt --desc
+
+      - name: Audit npm dependencies
+        working-directory: frontend
+        continue-on-error: true
+        run: npm audit --audit-level=high

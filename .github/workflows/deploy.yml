@@ -1,0 +1,57 @@
+name: Deploy
+
+# Production deploys are gated on CI. `render.yaml` sets `autoDeploy: false`,
+# so Render will NOT deploy on push by itself -- this workflow is the only
+# thing that triggers a production deploy, and it only runs after the CI
+# workflow has completed successfully on main.
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  # Manual escape hatch: deploy the current main from the Actions tab
+  # (e.g. to roll forward after fixing something on Render's side).
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    # For workflow_run triggers, only proceed when CI actually passed.
+    # Without this guard the deploy would also fire on a FAILED CI run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    # GitHub creates this environment automatically on first run. Add a
+    # required reviewer to it under Settings -> Environments -> production if
+    # you ever want deploys to pause for manual approval. You can also add a
+    # `url:` line here pointing at your live site to get a clickable link to
+    # production from the Actions tab.
+    environment: production
+
+    steps:
+      - name: Trigger Render deploy
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK secret is not set."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            echo "Get the URL from your Render service: Settings -> Deploy Hook."
+            exit 1
+          fi
+
+          echo "Triggering Render deploy..."
+          # -f makes curl exit non-zero on an HTTP error, so a rejected hook
+          # fails the job instead of silently "succeeding".
+          response=$(curl -fsS -X POST "$DEPLOY_HOOK")
+          echo "Render responded: $response"
+          echo "Deploy triggered. Watch progress in the Render dashboard."

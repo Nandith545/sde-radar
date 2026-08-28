@@ -1,5 +1,10 @@
 # SDE Radar
 
+<!-- Replace <your-username>/<your-repo> in these two URLs after you push,
+     and the badges will show live build status on the repo home page. -->
+[![CI](https://github.com/<your-username>/<your-repo>/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/<your-repo>/actions/workflows/ci.yml)
+[![Security](https://github.com/<your-username>/<your-repo>/actions/workflows/security.yml/badge.svg)](https://github.com/<your-username>/<your-repo>/actions/workflows/security.yml)
+
 A multi-user job-tracking application: anyone can create an account, upload
 their resume, and get a personalized, scored list of Seattle-area software
 engineering jobs with an application-status pipeline (New → Saved → Applied →
@@ -12,6 +17,7 @@ Built as a full-stack showcase project:
 - **Job data:** live listings from four independent job-board connectors — [Adzuna](https://developer.adzuna.com/), [Jooble](https://jooble.org/api/about), [Remotive](https://remotive.com/), and [Arbeitnow](https://www.arbeitnow.com/) — merged into one pool with cross-source deduplication, plus a bundled seed dataset so the app works immediately with zero external setup
 - **Matching engine:** a transparent, explainable scoring heuristic — skill overlap between your resume and each posting, target-title and target-city bonuses, and automatic flags for junior-level or part-time/contract postings — not a black box
 - **Deploy target:** [Render](https://render.com) via a single Dockerfile + `render.yaml` blueprint (one web service + one managed Postgres database)
+- **CI/CD:** GitHub Actions — tests, lint, type-check and a real-browser end-to-end run on every pull request; CodeQL security analysis; production deploys gated on a green build
 
 ---
 
@@ -149,42 +155,92 @@ file if a field name has drifted from what's coded.
 
 ---
 
-## Deploying to Render (the one-click path)
+## Putting it on GitHub
 
-1. **Push this repo to your own GitHub.** From this project's root:
-   ```bash
-   git add -A
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/<your-repo>.git
-   git push -u origin main
-   ```
-   (Create the empty repo on GitHub first — no README/license, so the push
-   doesn't conflict.)
+```bash
+# Create an EMPTY repo on GitHub first (no README, no .gitignore, no
+# license) so the first push doesn't conflict. Then:
+git branch -M main
+git remote add origin https://github.com/<your-username>/<your-repo>.git
+git push -u origin main
+```
 
-2. **In Render**, click **New → Blueprint**, connect your GitHub account, and
+The CI pipeline starts running on that first push — check the **Actions**
+tab. Then two settings worth doing once, in the repo's **Settings**:
+
+- **Branches → Add branch protection rule** for `main`: require a pull
+  request, and require the `Backend tests`, `Frontend lint & build` and
+  `End-to-end (Playwright)` status checks to pass. This is what makes the
+  workflow in [CONTRIBUTING.md](CONTRIBUTING.md) enforced rather than
+  merely suggested — it stops you pushing a broken `main` at 1am.
+- Update the two badge URLs at the top of this README with your username
+  and repo name.
+
+For day-to-day work after that — branching, commit messages, PRs, reading
+the history back later — see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+---
+
+## Deploying to Render
+
+1. **In Render**, click **New → Blueprint**, connect your GitHub account, and
    pick the repo you just pushed. Render reads `render.yaml` automatically
    and provisions:
    - a free web service built from the `Dockerfile`
    - a free Postgres database, wired to the web service via `DATABASE_URL`
    - an auto-generated `JWT_SECRET`
 
-3. Render will prompt for the optional variables left blank in
+2. Render will prompt for the optional variables left blank in
    `render.yaml` — `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `JOOBLE_API_KEY`.
    Leave them empty to launch on Remotive + Arbeitnow + the seed pool, or
    paste in free credentials for Adzuna and/or Jooble for broader live
    coverage.
 
-4. Click **Apply**. First build takes a few minutes (it's compiling the React
+3. Click **Apply**. First build takes a few minutes (it's compiling the React
    app and installing Python deps inside Docker). You'll get a public
    `https://<your-service>.onrender.com` URL — that's the link for your
    resume/portfolio and the one you'd send friends.
+
+4. **Wire up the CI-gated deploy** (one time). `render.yaml` sets
+   `autoDeploy: false`, so Render won't deploy on push by itself — GitHub
+   Actions triggers it only after CI passes:
+   - In Render: **your service → Settings → Deploy Hook**, copy the URL.
+   - In GitHub: **Settings → Secrets and variables → Actions → New
+     repository secret**, name it `RENDER_DEPLOY_HOOK`, paste the URL.
+
+   Until that secret exists the deploy job fails with a clear message and
+   nothing else breaks — CI still runs, you just deploy from Render's
+   dashboard manually.
 
 **Free-tier notes:** Render's free web services spin down after 15 minutes of
 inactivity (the first request after a quiet period takes ~30–50s to wake back
 up), and free Postgres databases expire after 30 days unless upgraded. Both
 are fine for a demo/portfolio project; upgrade to a paid instance if you want
 it always-warm.
+
+---
+
+## The pipeline
+
+Everything under `.github/` — what runs, when, and why:
+
+| Workflow | Triggers | What it does |
+|----------|----------|--------------|
+| `ci.yml` | every push to `main`, every PR | Backend dedup test against a real Postgres 16 service; frontend lint + type-check + production build; full Playwright end-to-end journey (register → upload resume → match → status change → reload → sign out) against the real stack |
+| `security.yml` | pushes, PRs, weekly Monday scan | CodeQL static analysis for Python and TypeScript (results in the Security tab); `pip-audit` + `npm audit` for known CVEs in dependencies |
+| `deploy.yml` | after CI succeeds on `main` | Fires the Render deploy hook. Skipped automatically if CI failed |
+| `dependabot.yml` | weekly / monthly | Opens grouped dependency-update PRs for pip, npm, GitHub Actions and Docker — each one runs through the same CI before you merge it |
+
+A few deliberate choices worth knowing:
+
+- **The end-to-end test runs against the real stack**, not mocks — real
+  Postgres, real FastAPI, real built React bundle, real Chromium. It's the
+  slowest job and the one most likely to catch an actual regression.
+- **The dependency audit doesn't fail the build.** A new advisory in a
+  transitive dependency shouldn't block an unrelated hotfix at 2am;
+  Dependabot opens the fix PR instead.
+- **Deploys are gated, not automatic.** `main` only reaches production
+  after the whole suite is green.
 
 ---
 

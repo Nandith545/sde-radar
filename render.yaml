@@ -11,6 +11,11 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /api/health
+    # Deploys are triggered by the GitHub Actions "Deploy" workflow after CI
+    # passes on main -- not automatically on every push. See
+    # .github/workflows/deploy.yml and the "Deploy pipeline" section of the
+    # README for the one-time RENDER_DEPLOY_HOOK secret setup.
+    autoDeploy: false
     envVars:
       - key: DATABASE_URL
         fromDatabase:
