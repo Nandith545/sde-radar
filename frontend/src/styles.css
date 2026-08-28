@@ -228,3 +228,15 @@ button{cursor:pointer;}
 .filter-note{background:var(--surface-2); border:1px solid var(--border); border-radius:8px;
   padding:9px 12px; font-size:13px; color:var(--text-muted); margin-bottom:14px;}
 .checkbox-row.inline{margin:0; white-space:nowrap;}
+
+/* Cities are added one at a time -- a comma-separated box can't work when
+   the values themselves contain commas. */
+.city-list{list-style:none; margin:0 0 8px; padding:0; display:flex; flex-wrap:wrap; gap:6px;}
+.city-list li{display:flex; align-items:center; gap:6px; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:999px; padding:3px 6px 3px 11px; font-size:13px;}
+.city-remove{background:none; border:0; cursor:pointer; color:var(--text-muted);
+  font-size:16px; line-height:1; padding:0 4px; border-radius:50%;}
+.city-remove:hover{color:var(--danger); background:var(--danger-soft);}
+.city-add{display:flex; gap:8px;}
+.city-add input{flex:1;}
+.city-add .btn{white-space:nowrap;}

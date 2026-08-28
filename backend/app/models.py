@@ -42,7 +42,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255), default="")
     hashed_password: Mapped[str] = mapped_column(String(255))
-    target_city: Mapped[str] = mapped_column(String(255), default="Seattle, WA")
+    target_cities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    """Cities the user will work in. Empty means anywhere.
+
+    A list rather than a delimited string because a city is already written
+    with a comma in it -- "Seattle, WA" -- so any separator that reads
+    naturally is also ambiguous.
+    """
     target_titles: Mapped[str] = mapped_column(String(500), default="Software Engineer")
     target_country: Mapped[str] = mapped_column(String(100), default="")
     """Free text, matched against a job's location by alias. Empty = anywhere."""

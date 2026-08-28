@@ -7,7 +7,7 @@ VALID = {
     "email": "new@example.com",
     "password": "supersecure123",
     "full_name": "New User",
-    "target_city": "Seattle, WA",
+    "target_cities": ["Seattle, WA"],
     "target_titles": "Software Engineer",
 }
 
@@ -98,11 +98,11 @@ def test_protected_routes_reject_bad_tokens(client: TestClient, header: str | No
 def test_update_profile(client: TestClient, registered_user: dict) -> None:
     response = client.patch(
         "/api/auth/me",
-        json={"target_city": "Bellevue, WA", "target_titles": "Staff Engineer"},
+        json={"target_cities": ["Bellevue, WA"], "target_titles": "Staff Engineer"},
         headers=registered_user["headers"],
     )
     assert response.status_code == 200
-    assert response.json()["target_city"] == "Bellevue, WA"
+    assert response.json()["target_cities"] == ["Bellevue, WA"]
     assert response.json()["target_titles"] == "Staff Engineer"
     # Unspecified fields are left alone rather than blanked.
     assert response.json()["full_name"] == registered_user["full_name"]
@@ -227,3 +227,29 @@ def test_address_and_phone_round_trip(client: TestClient) -> None:
     me = client.get("/api/auth/me", headers=_auth(token)).json()
     assert me["address"] == "1 Example Way, Seattle, WA 98101"
     assert me["phone"] == "+1 555 0100"
+
+
+def test_multiple_target_cities_round_trip(client: TestClient, registered_user: dict) -> None:
+    response = client.patch(
+        "/api/auth/me",
+        json={"target_cities": ["Seattle, WA", "Bellevue, WA", "Redmond, WA"]},
+        headers=registered_user["headers"],
+    )
+    assert response.status_code == 200
+    assert response.json()["target_cities"] == ["Seattle, WA", "Bellevue, WA", "Redmond, WA"]
+
+
+def test_target_cities_are_trimmed_and_deduplicated(client: TestClient, registered_user: dict) -> None:
+    """Applied server-side, so anything hitting the API directly gets the same
+    treatment as the form does."""
+    response = client.patch(
+        "/api/auth/me",
+        json={"target_cities": ["  Seattle, WA  ", "seattle, wa", "", "   ", "Austin, TX"]},
+        headers=registered_user["headers"],
+    )
+    assert response.json()["target_cities"] == ["Seattle, WA", "Austin, TX"]
+
+
+def test_clearing_target_cities_means_anywhere(client: TestClient, registered_user: dict) -> None:
+    response = client.patch("/api/auth/me", json={"target_cities": []}, headers=registered_user["headers"])
+    assert response.json()["target_cities"] == []

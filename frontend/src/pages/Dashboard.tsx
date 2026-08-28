@@ -107,7 +107,9 @@ export default function Dashboard() {
       <div className="topbar">
         <div className="brand">
           <div>
-            <div className="tag">{user.target_city} · Matched to your resume</div>
+            <div className="tag">
+              {user.target_cities.length ? user.target_cities.join(" · ") : "Anywhere"} · Matched to your resume
+            </div>
             <h1>SDE Radar</h1>
           </div>
         </div>
@@ -141,7 +143,7 @@ export default function Dashboard() {
 
       {!user.has_resume && (
         <ResumeUpload
-          city={user.target_city}
+          cities={user.target_cities}
           titles={user.target_titles}
           onUploaded={() => { refreshUser(); load(); }}
         />

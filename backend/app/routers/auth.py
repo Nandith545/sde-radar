@@ -56,7 +56,7 @@ def _user_out(user: models.User) -> schemas.UserOut:
         id=user.id,
         email=user.email,
         full_name=user.full_name,
-        target_city=user.target_city,
+        target_cities=user.target_cities or [],
         target_titles=user.target_titles,
         target_country=user.target_country,
         work_mode=_work_mode(user.work_mode),
@@ -77,7 +77,7 @@ def register(payload: schemas.UserRegister, db: Session = Depends(get_db)):
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=hash_password(payload.password),
-        target_city=payload.target_city,
+        target_cities=payload.target_cities,
         target_titles=payload.target_titles,
     )
     db.add(user)
@@ -131,8 +131,15 @@ def update_me(
 ):
     if payload.full_name is not None:
         current_user.full_name = payload.full_name
-    if payload.target_city is not None:
-        current_user.target_city = payload.target_city
+    if payload.target_cities is not None:
+        # Trimmed and de-duplicated here rather than in the UI, so the same
+        # rules apply to anything hitting the API directly.
+        seen: list[str] = []
+        for city in payload.target_cities:
+            trimmed = city.strip()
+            if trimmed and trimmed.lower() not in [c.lower() for c in seen]:
+                seen.append(trimmed)
+        current_user.target_cities = seen
     if payload.target_titles is not None:
         current_user.target_titles = payload.target_titles
     if payload.target_country is not None:

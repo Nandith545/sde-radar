@@ -93,7 +93,7 @@ def test_statuses_are_per_user_not_global(client: TestClient, user_with_resume: 
             "email": "other@example.com",
             "password": "supersecure123",
             "full_name": "Other User",
-            "target_city": "Seattle, WA",
+            "target_cities": ["Seattle, WA"],
             "target_titles": "Software Engineer",
         },
     )
