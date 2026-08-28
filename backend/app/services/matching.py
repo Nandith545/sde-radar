@@ -148,3 +148,45 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
 
     flag = " ".join(flag_parts) if flag_parts else None
     return MatchResult(score=score, reason=reason, flag=flag)
+
+
+def preference_mismatch(job: JobListing, user: User) -> str | None:
+    """Why this posting fails the user's stated preferences, or None.
+
+    Only the preferences that are *facts about a job* are treated as
+    constraints: where it is, whether it's remote, and whether it publishes
+    pay below the stated floor. Seniority stays out of this deliberately --
+    "senior" versus "mid" is a judgement the titles themselves are vague
+    about, and an adjacent level is usually still worth seeing. It keeps
+    influencing the score instead.
+
+    Nothing here drops a listing. The caller is handed a reason so the UI can
+    say what it hid and offer to show it, which is the difference between a
+    filter and a disappearance.
+    """
+    mode = infer_work_mode(job.location or "", job.title or "", job.description or "")
+
+    if user.work_mode and mode != "unknown" and mode != user.work_mode:
+        return f"This is {mode}, and you asked for {user.work_mode}."
+
+    # A remote role is available from anywhere, so it is exempt from the
+    # location checks. If the user specifically wants onsite, the work-mode
+    # check above has already excluded it.
+    if mode != "remote":
+        if user.target_city and not _city_matches(job.location, user.target_city):
+            where = job.location or "somewhere unstated"
+            return f"This is in {where}, not {user.target_city}."
+
+        if user.target_country:
+            wanted = normalize_country(user.target_country)
+            job_country = infer_country(job.location or "")
+            if job_country != "unknown" and wanted and job_country != wanted:
+                return f"This is in {job_country.title()}, not {user.target_country}."
+
+    if user.min_salary:
+        pay = annual_comp(job.comp_min, job.comp_max, job.comp_unit or "year")
+        # An unpublished range is not a failure -- most boards omit pay.
+        if pay is not None and pay < user.min_salary:
+            return f"Pays up to ${pay:,.0f}, below your ${user.min_salary:,.0f} minimum."
+
+    return None

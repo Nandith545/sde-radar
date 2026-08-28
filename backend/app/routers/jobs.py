@@ -6,7 +6,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..services.job_facets import FRESHNESS_WINDOWS, MAX_AGE_DAYS, job_age_days
 from ..services.job_ingestion import refresh_from_all_sources
-from ..services.matching import score_job
+from ..services.matching import preference_mismatch, score_job
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -20,7 +20,13 @@ def _source_names(job: models.JobListing) -> list[str]:
     return names or [job.source]
 
 
-def _to_job_out(job: models.JobListing, status: models.StatusEnum, notes: str, result) -> schemas.JobOut:
+def _to_job_out(
+    job: models.JobListing,
+    status: models.StatusEnum,
+    notes: str,
+    result,
+    mismatch: str | None = None,
+) -> schemas.JobOut:
     return schemas.JobOut(
         id=job.id,
         title=job.title,
@@ -37,6 +43,8 @@ def _to_job_out(job: models.JobListing, status: models.StatusEnum, notes: str, r
         score=result.score,
         reason=result.reason,
         flag=result.flag,
+        matches_preferences=mismatch is None,
+        mismatch_reason=mismatch,
         status=status,
         notes=notes,
     )
@@ -70,7 +78,7 @@ def _matched_jobs(db: Session, user: models.User, within_days: int = MAX_AGE_DAY
         existing = match_map.get(job.id)
         status = existing.status if existing else models.StatusEnum.new
         notes = existing.notes if existing else ""
-        entry = _to_job_out(job, status, notes, result)
+        entry = _to_job_out(job, status, notes, result, preference_mismatch(job, user))
         out.append((age if age is not None else MAX_AGE_DAYS + 1, entry))
 
     # Newest first, then by score so same-day postings still lead with the
@@ -138,7 +146,7 @@ def update_match(
 
     resume = db.query(models.Resume).filter(models.Resume.user_id == current_user.id).first()
     result = score_job(job, current_user, resume)
-    return _to_job_out(job, match.status, match.notes, result)
+    return _to_job_out(job, match.status, match.notes, result, preference_mismatch(job, current_user))
 
 
 @router.post("/refresh")

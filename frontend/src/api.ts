@@ -171,6 +171,8 @@ export interface Job {
   score: number;
   reason: string;
   flag: string | null;
+  matches_preferences: boolean;
+  mismatch_reason: string | null;
   status: JobStatus;
   notes: string;
 }

@@ -99,6 +99,8 @@ class JobOut(BaseModel):
     score: int
     reason: str
     flag: str | None
+    matches_preferences: bool
+    mismatch_reason: str | None
     status: StatusEnum
     notes: str
 

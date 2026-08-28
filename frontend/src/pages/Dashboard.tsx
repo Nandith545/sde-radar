@@ -38,6 +38,9 @@ export default function Dashboard() {
   // and a stale-but-strong match is worth less than a fresh decent one.
   const [sort, setSort] = useState<"score" | "comp" | "posted">("posted");
   const [postedWithin, setPostedWithin] = useState<PostedWithin>("30d");
+  // On by default: a preference the user set should change what they see, not
+  // just the order. The count of what it hides is shown, with a way back.
+  const [onlyMatches, setOnlyMatches] = useState(true);
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
 
   const load = async () => {
@@ -81,6 +84,7 @@ export default function Dashboard() {
 
   const visibleJobs = useMemo(() => {
     let list = jobs.slice();
+    if (onlyMatches) list = list.filter((j) => j.matches_preferences);
     if (statusFilter !== "all") list = list.filter((j) => j.status === statusFilter);
     if (query) {
       const q = query.toLowerCase();
@@ -92,7 +96,9 @@ export default function Dashboard() {
       list.sort((a, b) => annual(b) - annual(a));
     } else if (sort === "posted") list.sort((a, b) => (a.posted < b.posted ? 1 : -1));
     return list;
-  }, [jobs, query, sort, statusFilter]);
+  }, [jobs, query, sort, statusFilter, onlyMatches]);
+
+  const hiddenByPreferences = jobs.filter((j) => !j.matches_preferences).length;
 
   if (!user) return null;
 
@@ -187,6 +193,14 @@ export default function Dashboard() {
           <option value="comp">Sort: Compensation</option>
           <option value="posted">Sort: Most recent</option>
         </select>
+        <label className="checkbox-row inline">
+          <input
+            type="checkbox"
+            checked={onlyMatches}
+            onChange={(e) => setOnlyMatches(e.target.checked)}
+          />
+          <span>Only my preferences</span>
+        </label>
         <div className="pill-group">
           {STATUS_FILTERS.map((f) => (
             <button
@@ -201,13 +215,23 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {!loading && onlyMatches && hiddenByPreferences > 0 && (
+        <div className="filter-note">
+          {hiddenByPreferences} {hiddenByPreferences === 1 ? "job doesn't" : "jobs don't"} match your
+          preferences and {hiddenByPreferences === 1 ? "is" : "are"} hidden.{" "}
+          <button className="btn-link" onClick={() => setOnlyMatches(false)}>Show them</button>
+        </div>
+      )}
+
       {loading ? (
         <div className="spinner-wrap">Loading your matches…</div>
       ) : visibleJobs.length === 0 ? (
         <div className="empty-state">
           {jobs.length === 0
             ? "Nothing posted in this window. Try a wider one, or hit Refresh jobs."
-            : "No jobs match this filter yet."}
+            : onlyMatches && hiddenByPreferences > 0
+              ? "Nothing matches your preferences in this window. Widen them in Settings, or untick \u201cOnly my preferences\u201d."
+              : "No jobs match this filter yet."}
         </div>
       ) : (
         <div className="cards">
