@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
+import KanbanBoard from "../components/KanbanBoard";
 import type { Job, JobStatus, Stats, SourceStatus, PostedWithin } from "../api";
 import JobCard from "../components/JobCard";
 import ResumeUpload from "../components/ResumeUpload";
@@ -41,6 +42,10 @@ export default function Dashboard() {
   // On by default: a preference the user set should change what they see, not
   // just the order. The count of what it hides is shown, with a way back.
   const [onlyMatches, setOnlyMatches] = useState(true);
+  // Two views over the same data: "matches" is the incoming feed, "board" is
+  // the pipeline of jobs already acted on. A job leaves one by entering the
+  // other, so they are tabs rather than filters.
+  const [view, setView] = useState<"matches" | "board">("matches");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
 
   const load = async () => {
@@ -99,6 +104,9 @@ export default function Dashboard() {
   }, [jobs, query, sort, statusFilter, onlyMatches]);
 
   const hiddenByPreferences = jobs.filter((j) => !j.matches_preferences).length;
+  // Anything the user has touched belongs on the board, whatever the current
+  // match filters say -- a saved job must not vanish because the city changed.
+  const trackedJobs = jobs.filter((j) => j.status !== "new");
 
   if (!user) return null;
 
@@ -174,6 +182,26 @@ export default function Dashboard() {
         </div>
       )}
 
+      <div className="view-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={view === "matches"}
+          className="view-tab"
+          onClick={() => setView("matches")}
+        >
+          Matches
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === "board"}
+          className="view-tab"
+          onClick={() => setView("board")}
+        >
+          Board <span className="kanban-count">{trackedJobs.length}</span>
+        </button>
+      </div>
+
+      {view === "matches" && (
       <div className="controls">
         <input
           type="search"
@@ -216,8 +244,9 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+      )}
 
-      {!loading && onlyMatches && hiddenByPreferences > 0 && (
+      {!loading && view === "matches" && onlyMatches && hiddenByPreferences > 0 && (
         <div className="filter-note">
           {hiddenByPreferences} {hiddenByPreferences === 1 ? "job doesn't" : "jobs don't"} match your
           preferences and {hiddenByPreferences === 1 ? "is" : "are"} hidden.{" "}
@@ -227,6 +256,14 @@ export default function Dashboard() {
 
       {loading ? (
         <div className="spinner-wrap">Loading your matches…</div>
+      ) : view === "board" ? (
+        trackedJobs.length === 0 ? (
+          <div className="empty-state">
+            Nothing on the board yet. Save a job from Matches and it appears here.
+          </div>
+        ) : (
+          <KanbanBoard jobs={trackedJobs} onMove={(id, status) => onUpdate(id, { status })} />
+        )
       ) : visibleJobs.length === 0 ? (
         <div className="empty-state">
           {jobs.length === 0

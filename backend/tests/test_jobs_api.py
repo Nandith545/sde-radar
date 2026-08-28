@@ -178,3 +178,67 @@ def test_an_unknown_window_names_the_valid_ones(
         "detail"
     ]
     assert "1d" in detail and "30d" in detail
+
+
+# ---- Pipeline stages ---------------------------------------------------
+
+
+def test_a_job_can_move_through_every_stage(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    """The lifecycle the board draws: saved -> applied -> interviewing ->
+    offer -> archived."""
+    headers = user_with_resume["headers"]
+    job_id = client.get("/api/jobs", headers=headers).json()[0]["id"]
+
+    for stage in ["saved", "applied", "interviewing", "offer", "archived"]:
+        response = client.patch(f"/api/jobs/{job_id}", json={"status": stage}, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == stage
+
+
+def test_archived_survives_a_reload(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    headers = user_with_resume["headers"]
+    job_id = client.get("/api/jobs", headers=headers).json()[0]["id"]
+    client.patch(f"/api/jobs/{job_id}", json={"status": "archived"}, headers=headers)
+
+    again = next(j for j in client.get("/api/jobs", headers=headers).json() if j["id"] == job_id)
+    assert again["status"] == "archived"
+
+
+def test_archived_and_rejected_are_distinct_states(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    """The board groups them in one column, but they record different events:
+    rejected happened to you, archived was your decision."""
+    headers = user_with_resume["headers"]
+    jobs = client.get("/api/jobs", headers=headers).json()
+
+    client.patch(f"/api/jobs/{jobs[0]['id']}", json={"status": "archived"}, headers=headers)
+    client.patch(f"/api/jobs/{jobs[1]['id']}", json={"status": "rejected"}, headers=headers)
+
+    fresh = {j["id"]: j["status"] for j in client.get("/api/jobs", headers=headers).json()}
+    assert fresh[jobs[0]["id"]] == "archived"
+    assert fresh[jobs[1]["id"]] == "rejected"
+
+
+def test_an_unknown_status_is_rejected(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    headers = user_with_resume["headers"]
+    job_id = client.get("/api/jobs", headers=headers).json()[0]["id"]
+    assert client.patch(f"/api/jobs/{job_id}", json={"status": "banana"}, headers=headers).status_code == 422
+
+
+def test_a_tracked_job_stays_visible_when_preferences_stop_matching(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    """A saved job must not disappear from the board because the user changed
+    their target city -- the board is a record of what they did, not a feed."""
+    headers = user_with_resume["headers"]
+    job_id = client.get("/api/jobs", headers=headers).json()[0]["id"]
+    client.patch(f"/api/jobs/{job_id}", json={"status": "applied"}, headers=headers)
+
+    client.patch("/api/auth/me", json={"target_cities": ["Nowhere, ZZ"]}, headers=headers)
+
+    still_there = next(
+        (j for j in client.get("/api/jobs", headers=headers).json() if j["id"] == job_id), None
+    )
+    assert still_there is not None
+    assert still_there["status"] == "applied"

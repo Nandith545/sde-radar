@@ -8,6 +8,7 @@ const STATUS_LABELS: Record<JobStatus, string> = {
   interviewing: "Interviewing",
   offer: "Offer",
   rejected: "Rejected",
+  archived: "Archived",
 };
 
 function scoreTier(score: number): "high" | "mid" | "low" {

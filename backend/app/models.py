@@ -33,6 +33,13 @@ class StatusEnum(str, enum.Enum):
     interviewing = "interviewing"
     offer = "offer"
     rejected = "rejected"
+    archived = "archived"
+    """Terminal "done with this" state, distinct from rejected.
+
+    Rejected is something that happened to you; archived is a decision you
+    made. Both end the pipeline, and the board groups them in one column, but
+    collapsing them would throw away which of the two it was.
+    """
 
 
 class User(Base):

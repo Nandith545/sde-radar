@@ -153,7 +153,7 @@ export async function getResume(): Promise<Resume | null> {
 }
 
 // ---- Jobs ----
-export type JobStatus = "new" | "saved" | "applied" | "interviewing" | "offer" | "rejected";
+export type JobStatus = "new" | "saved" | "applied" | "interviewing" | "offer" | "rejected" | "archived";
 
 export interface Job {
   id: number;
