@@ -85,6 +85,29 @@ try {
   await page.click('button:has-text("Sign out")');
   await page.waitForURL("**/login");
 
+  // Registering and logging in take different code paths -- register posts
+  // JSON, login posts an OAuth2 password form. Only exercising register let
+  // a broken Content-Type on the login request ship to production.
+  console.log("10. Log back in with the same credentials");
+  const loginStatuses = [];
+  page.on("response", (r) => {
+    if (r.url().includes("/api/auth/login")) loginStatuses.push(r.status());
+  });
+  await page.fill("#email", email);
+  await page.fill("#password", "supersecure123");
+  await page.click('button:has-text("Sign in")');
+  await page.waitForURL(BASE + "/", { timeout: 15000 });
+  if (loginStatuses.some((s) => s !== 200)) {
+    throw new Error(`Login request did not return 200: ${loginStatuses.join(", ")}`);
+  }
+
+  console.log("11. Session is real: data still there after login");
+  await page.waitForSelector(".card");
+  const statusAfterLogin = await page.$eval(".status-select", (el) => el.value);
+  if (statusAfterLogin !== "applied") {
+    throw new Error("Status did not survive a fresh login");
+  }
+
   if (consoleErrors.length) console.log("Non-fatal console errors:", consoleErrors);
   console.log("\nSMOKE TEST PASSED");
 } catch (err) {
