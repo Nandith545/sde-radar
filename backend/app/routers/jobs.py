@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
+from ..services.job_facets import FRESHNESS_WINDOWS, MAX_AGE_DAYS, job_age_days
 from ..services.job_ingestion import refresh_from_all_sources
 from ..services.matching import score_job
 
@@ -41,7 +42,18 @@ def _to_job_out(job: models.JobListing, status: models.StatusEnum, notes: str, r
     )
 
 
-def _matched_jobs(db: Session, user: models.User) -> list[schemas.JobOut]:
+def _matched_jobs(db: Session, user: models.User, within_days: int = MAX_AGE_DAYS) -> list[schemas.JobOut]:
+    """Scored jobs, newest first, with anything past the age limit dropped.
+
+    `within_days` is clamped to MAX_AGE_DAYS: the ceiling is a property of the
+    product, not a default the caller can raise by passing a bigger number.
+
+    A posting whose age cannot be established at all is kept. That case needs
+    both an unparseable `posted` and a missing created_at, which no ingested
+    row has -- but dropping it silently is the failure mode worth avoiding,
+    since the user would never learn the listing existed.
+    """
+    within_days = min(within_days, MAX_AGE_DAYS)
     resume = db.query(models.Resume).filter(models.Resume.user_id == user.id).first()
     jobs = db.query(models.JobListing).all()
     match_map = {
@@ -51,18 +63,38 @@ def _matched_jobs(db: Session, user: models.User) -> list[schemas.JobOut]:
 
     out = []
     for job in jobs:
+        age = job_age_days(job.posted or "", job.created_at)
+        if age is not None and age > within_days:
+            continue
         result = score_job(job, user, resume)
         existing = match_map.get(job.id)
         status = existing.status if existing else models.StatusEnum.new
         notes = existing.notes if existing else ""
-        out.append(_to_job_out(job, status, notes, result))
-    out.sort(key=lambda j: -j.score)
-    return out
+        entry = _to_job_out(job, status, notes, result)
+        out.append((age if age is not None else MAX_AGE_DAYS + 1, entry))
+
+    # Newest first, then by score so same-day postings still lead with the
+    # best match rather than whatever order the database returned.
+    out.sort(key=lambda pair: (pair[0], -pair[1].score))
+    return [entry for _, entry in out]
 
 
 @router.get("", response_model=list[schemas.JobOut])
-def list_jobs(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _matched_jobs(db, current_user)
+def list_jobs(
+    posted_within: str = Query(
+        "30d",
+        description="One of 1d, 7d, 14d, 30d. Anything older than 30 days is never returned.",
+    ),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    days = FRESHNESS_WINDOWS.get(posted_within)
+    if days is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"posted_within must be one of: {', '.join(FRESHNESS_WINDOWS)}.",
+        )
+    return _matched_jobs(db, current_user, days)
 
 
 @router.get("/stats", response_model=schemas.StatsOut)

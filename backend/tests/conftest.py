@@ -6,6 +6,7 @@ TEST_DATABASE_URL at a Postgres instance to exercise the same tests against
 what production actually runs (CI does exactly that).
 """
 
+import datetime
 import os
 from collections.abc import Generator, Iterator
 
@@ -141,7 +142,10 @@ def build_job(**overrides) -> models.JobListing:
         "comp_max": 200000.0,
         "comp_unit": "year",
         "job_type": "Full-time",
-        "posted": "2026-08-01",
+        # Relative, not a fixed date: the jobs API drops anything older than
+        # MAX_AGE_DAYS, so a hardcoded date silently ages past the window and
+        # starts failing tests on a calendar day nobody touched the code.
+        "posted": (datetime.date.today() - datetime.timedelta(days=3)).isoformat(),
         "url": "https://example.com/job/1",
         "skills": ["Java", "Python", "AWS"],
         "dedup_key": "acme|senior software engineer|seattle",

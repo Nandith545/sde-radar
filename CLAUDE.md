@@ -103,6 +103,24 @@ It stops casual credential stuffing against one instance. Scale past one
 replica and each keeps its own tally, so the effective limit multiplies. The
 fix at that point is Redis or an edge limiter — noted, deliberately deferred.
 
+**Jobs older than 30 days are never shown.** `MAX_AGE_DAYS` in
+`services/job_facets.py` is a ceiling, not a default -- `_matched_jobs`
+clamps whatever the caller asks for. Two consequences worth knowing:
+
+- **The bundled seed pool ages out.** Its dates are fixed, so the number of
+  visible seed jobs shrinks over time and will eventually reach zero. A
+  dashboard that looks empty on a fresh install with no configured
+  connectors is this, not a bug. Re-date `seed_jobs.py` if you want it to
+  keep demoing.
+- **Test fixtures must use relative dates.** `build_job` computes `posted`
+  from `date.today()`. A hardcoded date drifts past the window and starts
+  failing the suite on a calendar day when nobody touched the code.
+
+There is no "last hour" filter. Every connector truncates its timestamp to
+a date (`[:10]`), so `posted` has day granularity; an hour window could only
+be answered from `created_at`, which is when *we* first saw the posting
+rather than when it went up.
+
 **Skill extraction is keyword-based, not LLM-based** (`services/skills.py`).
 That's deliberate: no per-user inference cost, no external AI dependency. It
 will miss unusually-phrased skills. Don't "fix" this by adding an LLM call

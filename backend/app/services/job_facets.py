@@ -11,6 +11,8 @@ That asymmetry is deliberate. Scoring a job lower because we could not
 classify it would hide real matches for a reason the user can never see.
 """
 
+import datetime
+
 # Ordered: "hybrid" wins over "remote" because a hybrid posting almost always
 # says "remote" too ("2 days remote, 3 in office"), and the reverse is rare.
 _HYBRID_HINTS = ("hybrid", "partially remote", "part remote", "flexible working model")
@@ -276,3 +278,44 @@ def annual_comp(comp_min: float | None, comp_max: float | None, comp_unit: str) 
     if not best:
         return None
     return best * HOURS_PER_YEAR if comp_unit == "hour" else best
+
+
+# The hard ceiling. Postings older than this are never shown, whatever the
+# user picks -- a 40-day-old req is usually filled or abandoned, and showing
+# it wastes the applicant's time more than missing it costs them.
+MAX_AGE_DAYS = 30
+
+# Options offered in the UI. "Last hour" is deliberately absent: every
+# connector truncates its timestamp to a date (`[:10]`), so `posted` has
+# day granularity and an hour window could only ever be answered against
+# created_at -- which is when *we* first saw the posting, not when it went
+# up. Offering it would put a precise-looking number on a thing we do not
+# know.
+FRESHNESS_WINDOWS = {"1d": 1, "7d": 7, "14d": 14, "30d": 30}
+
+
+def job_age_days(
+    posted: str, created_at: datetime.datetime, now: datetime.datetime | None = None
+) -> int | None:
+    """Days since the posting went up, or None if that can't be established.
+
+    `posted` is the board's own date and is preferred. It is frequently
+    empty -- Arbeitnow blanks it when the timestamp won't parse -- so
+    created_at stands in: we cannot have ingested a job before it existed,
+    which makes it a genuine upper bound on age rather than a guess.
+    """
+    now = now or datetime.datetime.now(datetime.UTC)
+    stamp = None
+    if posted:
+        try:
+            stamp = datetime.datetime.fromisoformat(posted[:10]).replace(tzinfo=datetime.UTC)
+        except ValueError:
+            stamp = None
+    if stamp is None:
+        stamp = created_at
+        if stamp is None:
+            return None
+        if stamp.tzinfo is None:
+            # SQLite hands back naive datetimes even for timezone=True columns.
+            stamp = stamp.replace(tzinfo=datetime.UTC)
+    return max(0, (now - stamp).days)
