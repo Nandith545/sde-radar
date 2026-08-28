@@ -13,7 +13,7 @@ from starlette.responses import Response
 
 from .config import settings, validate_for_production
 from .database import Base, SessionLocal, engine
-from .routers import auth, jobs, resume
+from .routers import auth, documents, jobs, resume
 from .services.job_ingestion import refresh_from_all_sources, seed_if_empty
 from .services.sources import REGISTRY, active_sources
 
@@ -141,6 +141,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(auth.router)
 app.include_router(resume.router)
 app.include_router(jobs.router)
+app.include_router(documents.router)
 
 
 @app.get("/api/health")

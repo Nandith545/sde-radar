@@ -26,6 +26,7 @@ def _to_job_out(
     notes: str,
     result,
     mismatch: str | None = None,
+    match: models.UserJobMatch | None = None,
 ) -> schemas.JobOut:
     return schemas.JobOut(
         id=job.id,
@@ -45,6 +46,8 @@ def _to_job_out(
         flag=result.flag,
         matches_preferences=mismatch is None,
         mismatch_reason=mismatch,
+        resume_document_id=match.resume_document_id if match else None,
+        cover_letter_document_id=match.cover_letter_document_id if match else None,
         status=status,
         notes=notes,
     )
@@ -78,7 +81,7 @@ def _matched_jobs(db: Session, user: models.User, within_days: int = MAX_AGE_DAY
         existing = match_map.get(job.id)
         status = existing.status if existing else models.StatusEnum.new
         notes = existing.notes if existing else ""
-        entry = _to_job_out(job, status, notes, result, preference_mismatch(job, user))
+        entry = _to_job_out(job, status, notes, result, preference_mismatch(job, user), existing)
         out.append((age if age is not None else MAX_AGE_DAYS + 1, entry))
 
     # Newest first, then by score so same-day postings still lead with the
@@ -142,11 +145,31 @@ def update_match(
         match.status = payload.status
     if payload.notes is not None:
         match.notes = payload.notes
+    for field in ("resume_document_id", "cover_letter_document_id"):
+        value = getattr(payload, field)
+        if value is None:
+            continue
+        if value == 0:
+            setattr(match, field, None)
+            continue
+        owned = (
+            db.query(models.UserDocument)
+            .filter(
+                models.UserDocument.id == value,
+                # Scoped to the owner, so a guessed id can't attach someone
+                # else's resume to your application.
+                models.UserDocument.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not owned:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        setattr(match, field, value)
     db.commit()
 
     resume = db.query(models.Resume).filter(models.Resume.user_id == current_user.id).first()
     result = score_job(job, current_user, resume)
-    return _to_job_out(job, match.status, match.notes, result, preference_mismatch(job, current_user))
+    return _to_job_out(job, match.status, match.notes, result, preference_mismatch(job, current_user), match)
 
 
 # Each city is a separate round of calls to every configured board, so this
