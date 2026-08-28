@@ -26,6 +26,7 @@ class Token(BaseModel):
 
 
 WorkMode = Literal["", "remote", "hybrid", "onsite"]
+Seniority = Literal["", "entry", "mid", "senior"]
 
 
 class UserOut(BaseModel):
@@ -36,6 +37,8 @@ class UserOut(BaseModel):
     target_titles: str
     target_country: str
     work_mode: WorkMode
+    seniority: Seniority
+    min_salary: float | None
     has_resume: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -47,6 +50,9 @@ class UserUpdate(BaseModel):
     target_titles: str | None = Field(default=None, max_length=500)
     target_country: str | None = Field(default=None, max_length=100)
     work_mode: WorkMode | None = None
+    seniority: Seniority | None = None
+    # 0 is a meaningful 'no floor' the UI can send when the box is cleared.
+    min_salary: float | None = Field(default=None, ge=0, le=10_000_000)
 
 
 # ---- Resume -------------------------------------------------------------

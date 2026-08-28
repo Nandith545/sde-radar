@@ -209,3 +209,10 @@ button{cursor:pointer;}
   .settings-grid{grid-template-columns:1fr;}
   .settings-actions .btn{width:100%;}
 }
+
+/* Currency prefix that sits inside the input's border rather than beside it,
+   so the field still lines up with every other one in the panel. */
+.prefixed-input{position:relative;}
+.prefixed-input span{position:absolute; left:11px; top:50%; transform:translateY(-50%);
+  color:var(--text-faint); font-size:13px; pointer-events:none;}
+.prefixed-input input{padding-left:24px;}

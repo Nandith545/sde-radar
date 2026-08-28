@@ -47,6 +47,12 @@ class User(Base):
     target_country: Mapped[str] = mapped_column(String(100), default="")
     """Free text, matched against a job's location by alias. Empty = anywhere."""
 
+    seniority: Mapped[str] = mapped_column(String(20), default="")
+    """"entry" | "mid" | "senior", or empty to derive it from the resume."""
+
+    min_salary: Mapped[float | None] = mapped_column(Float, nullable=True)
+    """Annual floor. NULL means no floor, which is distinct from a floor of 0."""
+
     work_mode: Mapped[str] = mapped_column(String(20), default="")
     """"remote" | "hybrid" | "onsite", or empty for no preference.
 

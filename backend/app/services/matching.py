@@ -8,10 +8,18 @@ single-user SDE Radar prototype presented its matches.
 from dataclasses import dataclass
 
 from ..models import JobListing, Resume, User
-from .job_facets import infer_country, infer_work_mode, normalize_country
+from .job_facets import (
+    annual_comp,
+    infer_country,
+    infer_seniority,
+    infer_work_mode,
+    normalize_country,
+    seniority_distance,
+    seniority_from_years,
+)
 
-SENIOR_WORDS = ["senior", "staff", "principal", "lead", "l5", "l6", "sde ii", "sde2", "sde 2", "iii", "iv"]
-JUNIOR_WORDS = ["junior", "jr.", "jr ", "entry level", "intern", "internship", "new grad"]
+# Seniority vocabulary now lives in job_facets alongside the other inference.
+# SENIOR_WORDS was declared here and never read by anything.
 PART_TIME_WORDS = ["part-time", "part time", "contract", "contractor", "temporary", "gig"]
 
 
@@ -84,16 +92,41 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
     ):
         flag_parts.append("Looks like part-time or contract work, not a full-time role.")
         score -= 10
-    if any(w in title_l for w in JUNIOR_WORDS):
-        flag_parts.append("Title suggests a junior/entry-level position.")
-        score -= 15
-    if (
-        resume
-        and resume.years_experience
-        and resume.years_experience >= 7
-        and any(w in title_l for w in JUNIOR_WORDS)
-    ):
-        flag_parts.append("Your resume shows senior-level experience; this posting reads entry-level.")
+    # Seniority used to cost every junior-titled posting a flat 15 points, for
+    # everyone -- which penalised entry-level candidates for being shown the
+    # jobs they actually wanted. It is now a comparison against the level the
+    # user is looking for, stated in settings or, failing that, read off their
+    # resume. A user with neither gets no seniority adjustment at all.
+    wanted_level = user.seniority or seniority_from_years(resume.years_experience if resume else None)
+    if wanted_level:
+        job_level = infer_seniority(job.title or "")
+        gap = seniority_distance(job_level, wanted_level)
+        if gap == 0:
+            score += 10
+        elif gap > 0:
+            # Two rungs apart (entry vs senior) is a harder miss than one.
+            score -= 8 * gap
+            if user.seniority:
+                flag_parts.append(
+                    f"This reads {job_level}-level, and you're looking for {wanted_level}-level."
+                )
+            else:
+                years = resume.years_experience if resume else None
+                flag_parts.append(
+                    f"This reads {job_level}-level; your resume shows {years:g} years of experience."
+                )
+
+    # Salary is only ever applied when the posting actually publishes a range.
+    # Most don't, and treating a missing range as "fails your floor" would
+    # hide the majority of the board for a reason the user cannot see.
+    if user.min_salary:
+        pay = annual_comp(job.comp_min, job.comp_max, job.comp_unit or "year")
+        if pay is not None:
+            if pay >= user.min_salary:
+                score += 8
+            else:
+                score -= 18
+                flag_parts.append(f"Pays up to ${pay:,.0f}, below your ${user.min_salary:,.0f} minimum.")
 
     score = max(0, min(100, round(score)))
 

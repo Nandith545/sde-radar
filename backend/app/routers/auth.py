@@ -31,6 +31,13 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _seniority(value: str) -> schemas.Seniority:
+    """Same defensive read as _work_mode: a plain column, a closed API."""
+    if value in ("entry", "mid", "senior"):
+        return cast(schemas.Seniority, value)
+    return ""
+
+
 def _work_mode(value: str) -> schemas.WorkMode:
     """Read the plain-string column as the closed set the API promises.
 
@@ -53,6 +60,8 @@ def _user_out(user: models.User) -> schemas.UserOut:
         target_titles=user.target_titles,
         target_country=user.target_country,
         work_mode=_work_mode(user.work_mode),
+        seniority=_seniority(user.seniority),
+        min_salary=user.min_salary,
         has_resume=user.resume is not None,
     )
 
@@ -128,6 +137,11 @@ def update_me(
         current_user.target_country = payload.target_country
     if payload.work_mode is not None:
         current_user.work_mode = payload.work_mode
+    if payload.seniority is not None:
+        current_user.seniority = payload.seniority
+    if payload.min_salary is not None:
+        # 0 clears the floor; NULL and 0 both mean 'no minimum' to scoring.
+        current_user.min_salary = payload.min_salary or None
     db.commit()
     db.refresh(current_user)
     return _user_out(current_user)
