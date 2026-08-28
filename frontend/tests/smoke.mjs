@@ -45,6 +45,35 @@ try {
   console.log("2. Go to register, fill form, submit");
   await page.click("text=Create an account");
   await page.waitForURL("**/register");
+  await page.waitForTimeout(300);
+
+  // Auth affordances, checked here rather than in a separate spec so they
+  // ride the same real browser against the real backend.
+  // Caps Lock is deliberately absent: Chromium does not emulate the modifier
+  // state through CDP, so getModifierState("CapsLock") is always false in
+  // Playwright and any assertion on it would pass for the wrong reason.
+  if ((await page.evaluate(() => document.activeElement?.id)) !== "fullName") {
+    throw new Error("Register form did not autofocus its first field");
+  }
+  await page.fill("#email", "not-an-email");
+  await page.locator("#email").blur();
+  await page.waitForTimeout(200);
+  if (!(await page.textContent("body")).includes("doesn't look like an email")) {
+    throw new Error("Inline email validation did not fire");
+  }
+  if (!(await page.isDisabled('button:has-text("Create account")'))) {
+    throw new Error("Submit stayed enabled with an invalid email");
+  }
+  await page.fill("#password", "secret123");
+  if ((await page.getAttribute("#password", "type")) !== "password") {
+    throw new Error("Password field is not masked by default");
+  }
+  await page.click('button[aria-label="Show password"]');
+  if ((await page.getAttribute("#password", "type")) !== "text") {
+    throw new Error("Reveal toggle did not unmask the password");
+  }
+  await page.click('button[aria-label="Hide password"]');
+
   await page.fill("#fullName", "Friend Tester");
   await page.fill("#email", email);
   await page.fill("#password", "supersecure123");
@@ -95,10 +124,20 @@ try {
   });
   await page.fill("#email", email);
   await page.fill("#password", "supersecure123");
+  // Unchecked, so this also asserts "keep me signed in" actually routes the
+  // token to sessionStorage rather than just rendering a checkbox.
+  await page.uncheck("#remember");
   await page.click('button:has-text("Sign in")');
   await page.waitForURL(BASE + "/", { timeout: 15000 });
   if (loginStatuses.some((s) => s !== 200)) {
     throw new Error(`Login request did not return 200: ${loginStatuses.join(", ")}`);
+  }
+  const stored = await page.evaluate(() => ({
+    local: localStorage.getItem("sde_radar_token"),
+    session: sessionStorage.getItem("sde_radar_token"),
+  }));
+  if (stored.local || !stored.session) {
+    throw new Error("Unchecked 'keep me signed in' did not confine the token to sessionStorage");
   }
 
   console.log("11. Session is real: data still there after login");

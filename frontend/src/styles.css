@@ -56,6 +56,29 @@ button{cursor:pointer;}
 .field input, .field textarea{width:100%; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:9px 11px; color:var(--text);}
 .field-hint{font-size:11.5px; color:var(--text-faint); margin-top:4px;}
 .form-error{background:var(--danger-soft); color:var(--danger); border-radius:8px; padding:9px 12px; font-size:13px; margin-bottom:14px;}
+
+/* --- Auth form affordances ------------------------------------------- */
+/* Reveal button sits inside the input, so the field keeps its full width
+   and the button never reflows the form when its label changes. */
+.password-wrap{position:relative;}
+.password-wrap input{padding-right:62px;}
+.reveal-btn{position:absolute; top:50%; right:6px; transform:translateY(-50%);
+  background:none; border:0; padding:4px 7px; border-radius:6px; cursor:pointer;
+  font:inherit; font-size:11.5px; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.04em; color:var(--text-muted);}
+.reveal-btn:hover{color:var(--accent); background:var(--surface-2);}
+.reveal-btn:focus-visible{outline:2px solid var(--focus); outline-offset:1px;}
+
+.field-error{font-size:11.5px; color:var(--danger); margin-top:4px;}
+.field-warning{font-size:11.5px; color:var(--status-interviewing); margin-top:4px;}
+.field input[aria-invalid="true"]{border-color:var(--danger);}
+
+.checkbox-row{display:flex; align-items:center; gap:8px; margin:0 0 16px;
+  font-size:13px; color:var(--text-muted); cursor:pointer;}
+.checkbox-row input{width:auto; margin:0; accent-color:var(--accent);}
+.checkbox-row span{user-select:none;}
+
+.btn:disabled{opacity:0.55; cursor:not-allowed;}
 .switch-link{margin-top:18px; font-size:13px; color:var(--text-muted); text-align:center;}
 
 .connector-strip{display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:16px;}

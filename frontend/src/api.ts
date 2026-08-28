@@ -1,13 +1,21 @@
 const TOKEN_KEY = "sde_radar_token";
 
+// "Remember me" is the choice between the two web storages, not a longer
+// token: localStorage outlives the browser session, sessionStorage dies with
+// the tab. The JWT's own expiry is unchanged either way, so declining to be
+// remembered can only shorten how long you stay signed in, never extend it.
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY);
 }
-export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
+export function setToken(token: string, remember = true) {
+  // Always clear both first, so toggling the checkbox between sign-ins can't
+  // leave a stale token behind in the store we're no longer writing to.
+  clearToken();
+  (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
 }
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export class ApiError extends Error {
