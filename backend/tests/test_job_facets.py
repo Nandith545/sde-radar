@@ -7,7 +7,15 @@ being quietly classified and then quietly penalised.
 
 import pytest
 
-from app.services.job_facets import infer_country, infer_work_mode, normalize_country
+from app.services.job_facets import (
+    annual_comp,
+    infer_country,
+    infer_seniority,
+    infer_work_mode,
+    normalize_country,
+    seniority_distance,
+    seniority_from_years,
+)
 
 
 @pytest.mark.parametrize(
@@ -76,3 +84,73 @@ def test_unrecognised_location_is_unknown_not_a_default() -> None:
 )
 def test_user_input_normalizes_onto_the_same_vocabulary(typed: str, expected: str) -> None:
     assert normalize_country(typed) == expected
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Junior Software Engineer", "entry"),
+        ("Software Engineer Intern", "entry"),
+        ("New Grad Software Engineer", "entry"),
+        ("Senior Software Engineer", "senior"),
+        ("Staff Engineer", "senior"),
+        ("Principal Engineer", "senior"),
+        ("Software Engineer III", "senior"),
+        ("Software Engineer", "mid"),
+        ("Backend Engineer", "mid"),
+    ],
+)
+def test_seniority_inference(title: str, expected: str) -> None:
+    assert infer_seniority(title) == expected
+
+
+def test_an_unmarked_title_reads_as_mid_not_unknown() -> None:
+    """Employers label junior and senior and leave mid bare, so the absence of
+    a marker is signal here -- unlike work mode, where absence means nothing."""
+    assert infer_seniority("Software Engineer") == "mid"
+
+
+def test_senior_wins_when_a_title_carries_both_markers() -> None:
+    assert infer_seniority("Senior Engineer, New Grad Mentorship") == "senior"
+
+
+@pytest.mark.parametrize(
+    ("years", "expected"),
+    [
+        (None, ""),
+        (0.5, "entry"),
+        (1.9, "entry"),
+        (2.0, "mid"),
+        (6.9, "mid"),
+        (7.0, "senior"),
+        (15.0, "senior"),
+    ],
+)
+def test_seniority_from_resume_years(years: float | None, expected: str) -> None:
+    assert seniority_from_years(years) == expected
+
+
+def test_seniority_distance() -> None:
+    assert seniority_distance("mid", "mid") == 0
+    assert seniority_distance("entry", "mid") == 1
+    assert seniority_distance("entry", "senior") == 2
+    assert seniority_distance("nonsense", "mid") == -1
+
+
+@pytest.mark.parametrize(
+    ("cmin", "cmax", "unit", "expected"),
+    [
+        (150000, 200000, "year", 200000),
+        (150000, None, "year", 150000),
+        (None, None, "year", None),
+        (0, 0, "year", None),
+        (80, 100, "hour", 100 * 2080),
+    ],
+)
+def test_annual_comp(cmin, cmax, unit, expected) -> None:
+    assert annual_comp(cmin, cmax, unit) == expected
+
+
+def test_a_posting_without_salary_is_unknown_not_zero() -> None:
+    """The distinction the salary floor depends on: most boards omit pay."""
+    assert annual_comp(None, None, "year") is None

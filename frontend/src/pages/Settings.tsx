@@ -2,7 +2,14 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
-import { ApiError, type WorkMode } from "../api";
+import { ApiError, type Seniority, type WorkMode } from "../api";
+
+const SENIORITY_LEVELS: { value: Seniority; label: string; blurb: string }[] = [
+  { value: "", label: "Match my resume", blurb: "Infer the level from your years of experience." },
+  { value: "entry", label: "Entry level", blurb: "New grad, junior and internship roles." },
+  { value: "mid", label: "Mid level", blurb: "Titles with no junior or senior marker." },
+  { value: "senior", label: "Senior and above", blurb: "Senior, staff, principal and lead." },
+];
 
 const WORK_MODES: { value: WorkMode; label: string; blurb: string }[] = [
   { value: "", label: "No preference", blurb: "Score every posting the same way." },
@@ -21,6 +28,9 @@ export default function Settings() {
   const [city, setCity] = useState("");
   const [titles, setTitles] = useState("");
   const [workMode, setWorkMode] = useState<WorkMode>("");
+  const [seniority, setSeniority] = useState<Seniority>("");
+  // Held as a string so the box can be genuinely empty; "" means no floor.
+  const [minSalary, setMinSalary] = useState("");
 
   const [resume, setResume] = useState<api.Resume | null>(null);
   const [saving, setSaving] = useState(false);
@@ -37,6 +47,8 @@ export default function Settings() {
     setCity(user.target_city);
     setTitles(user.target_titles);
     setWorkMode(user.work_mode);
+    setSeniority(user.seniority);
+    setMinSalary(user.min_salary != null ? String(user.min_salary) : "");
   }, [user]);
 
   useEffect(() => {
@@ -57,6 +69,9 @@ export default function Settings() {
         target_titles: titles,
         target_country: country,
         work_mode: workMode,
+        seniority,
+        // 0 tells the API to clear the floor; the column stores NULL.
+        min_salary: minSalary.trim() === "" ? 0 : Number(minSalary),
       });
       await refreshUser();
       setSaved(true);
@@ -169,6 +184,46 @@ export default function Settings() {
 
         <section className="panel">
           <h2>What you want to do</h2>
+          <fieldset className="field mode-set">
+            <legend>Seniority</legend>
+            {SENIORITY_LEVELS.map((l) => (
+              <label key={l.value || "auto"} className="mode-option">
+                <input
+                  type="radio"
+                  name="seniority"
+                  value={l.value}
+                  checked={seniority === l.value}
+                  onChange={() => setSeniority(l.value)}
+                />
+                <span>
+                  <strong>{l.label}</strong>
+                  <em>{l.blurb}</em>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+
+          <div className="field">
+            <label htmlFor="set-salary">Minimum salary</label>
+            <div className="prefixed-input">
+              <span aria-hidden="true">$</span>
+              <input
+                id="set-salary"
+                type="number"
+                min={0}
+                step={5000}
+                inputMode="numeric"
+                value={minSalary}
+                onChange={(e) => setMinSalary(e.target.value)}
+                placeholder="No minimum"
+              />
+            </div>
+            <div className="field-hint">
+              Annual, before equity. Hourly rates are converted at 2,080 hours.
+              Postings that don't publish a range are left alone, not filtered out.
+            </div>
+          </div>
+
           <div className="field">
             <label htmlFor="set-titles">Target roles</label>
             <input

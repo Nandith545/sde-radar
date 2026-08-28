@@ -57,6 +57,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // ---- Auth ----
 export type WorkMode = "" | "remote" | "hybrid" | "onsite";
+export type Seniority = "" | "entry" | "mid" | "senior";
 
 export interface User {
   id: number;
@@ -66,6 +67,8 @@ export interface User {
   target_titles: string;
   target_country: string;
   work_mode: WorkMode;
+  seniority: Seniority;
+  min_salary: number | null;
   has_resume: boolean;
 }
 
@@ -91,7 +94,7 @@ export async function fetchMe(): Promise<User> {
 }
 
 export async function updateMe(
-  payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles" | "target_country" | "work_mode">>,
+  payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary">>,
 ): Promise<User> {
   return request("/auth/me", { method: "PATCH", body: JSON.stringify(payload) });
 }

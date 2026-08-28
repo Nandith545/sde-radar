@@ -158,3 +158,90 @@ def test_country_preference_ignores_unrecognised_locations(make_job) -> None:
     job = make_job(location="Atlantis", skills=["Python"])
 
     assert score_job(job, user_with_pref, resume).score == score_job(job, user_without, resume).score
+
+
+# ---- Seniority ---------------------------------------------------------
+
+
+def test_entry_level_candidate_is_not_punished_for_entry_level_jobs(make_job) -> None:
+    """The behaviour this replaced: a flat penalty on every junior title meant
+    a new grad was scored down on exactly the roles they should be shown."""
+    grad = _user(seniority="entry")
+    resume = _resume(["Python"], years=0.5)
+
+    junior = score_job(make_job(title="Junior Software Engineer", skills=["Python"]), grad, resume)
+    staff = score_job(make_job(title="Staff Software Engineer", skills=["Python"]), grad, resume)
+
+    assert junior.score > staff.score
+    assert junior.flag is None or "entry" not in junior.flag.lower()
+
+
+def test_stated_preference_beats_resume_derived_one(make_job) -> None:
+    """Someone stepping down a level should be able to say so."""
+    resume = _resume(["Python"], years=12.0)
+    by_resume = _user()
+    by_choice = _user(seniority="entry")
+    job = make_job(title="Junior Software Engineer", skills=["Python"])
+
+    assert score_job(job, by_choice, resume).score > score_job(job, by_resume, resume).score
+
+
+def test_seniority_gap_is_proportional(make_job) -> None:
+    user = _user(seniority="senior")
+    resume = _resume(["Python"])
+
+    senior = score_job(make_job(title="Senior Engineer", skills=["Python"]), user, resume)
+    mid = score_job(make_job(title="Software Engineer", skills=["Python"]), user, resume)
+    entry = score_job(make_job(title="Junior Engineer", skills=["Python"]), user, resume)
+
+    assert senior.score > mid.score > entry.score
+
+
+def test_no_preference_and_no_resume_means_no_seniority_adjustment(make_job) -> None:
+    user = _user()
+    junior = score_job(make_job(title="Junior Engineer", skills=["Python"]), user, None)
+    senior = score_job(make_job(title="Senior Engineer", skills=["Python"]), user, None)
+    assert junior.score == senior.score
+
+
+# ---- Salary floor ------------------------------------------------------
+
+
+def test_jobs_below_the_salary_floor_are_flagged(make_job) -> None:
+    user = _user(min_salary=180000)
+    resume = _resume(["Python"])
+
+    low = score_job(make_job(comp_min=90000, comp_max=110000, skills=["Python"]), user, resume)
+
+    assert low.flag is not None and "below your" in low.flag.lower()
+
+
+def test_jobs_above_the_salary_floor_score_higher(make_job) -> None:
+    user = _user(min_salary=180000)
+    resume = _resume(["Python"])
+
+    high = score_job(make_job(comp_min=200000, comp_max=250000, skills=["Python"]), user, resume)
+    low = score_job(make_job(comp_min=90000, comp_max=110000, skills=["Python"]), user, resume)
+
+    assert high.score > low.score
+
+
+def test_a_job_with_no_published_salary_is_not_penalised(make_job) -> None:
+    """Most postings omit pay. Treating that as failing the floor would hide
+    most of the board for a reason the user can never see."""
+    with_floor = _user(min_salary=180000)
+    without = _user()
+    resume = _resume(["Python"])
+    job = make_job(comp_min=None, comp_max=None, skills=["Python"])
+
+    assert score_job(job, with_floor, resume).score == score_job(job, without, resume).score
+
+
+def test_hourly_pay_is_annualised_before_comparison(make_job) -> None:
+    user = _user(min_salary=180000)
+    resume = _resume(["Python"])
+
+    # $100/hr is ~$208k a year, comfortably over the floor.
+    hourly = score_job(make_job(comp_min=90, comp_max=100, comp_unit="hour", skills=["Python"]), user, resume)
+
+    assert not (hourly.flag and "below your" in hourly.flag.lower())

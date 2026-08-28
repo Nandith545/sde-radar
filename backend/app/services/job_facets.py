@@ -179,3 +179,100 @@ def normalize_country(value: str) -> str:
             if text.strip() == alias.strip():
                 return country
     return value.strip().lower()
+
+
+# Kept here beside the other inference so the vocabulary lives in one place.
+_ENTRY_WORDS = (
+    "junior",
+    "jr.",
+    "jr ",
+    "entry level",
+    "entry-level",
+    "intern",
+    "internship",
+    "new grad",
+    "graduate",
+)
+_SENIOR_WORDS = (
+    "senior",
+    "sr.",
+    "sr ",
+    "staff",
+    "principal",
+    "lead",
+    "l5",
+    "l6",
+    "sde ii",
+    "sde2",
+    "sde 2",
+    "sde iii",
+    " iii",
+    " iv",
+    "architect",
+)
+
+
+def infer_seniority(title: str) -> str:
+    """Return "entry", "senior" or "mid" from a job title.
+
+    Unlike work mode, an absent marker here is real signal rather than a gap.
+    Employers label junior and senior explicitly and leave mid-level roles
+    bare -- "Software Engineer" with no qualifier is the industry's way of
+    saying mid. So this returns "mid" for an unmarked title instead of
+    "unknown", and the caller is safe to act on it.
+
+    Senior is checked first: "Senior Software Engineer, New Grad Program" is
+    a senior req that mentions a programme, not an entry-level role.
+    """
+    text = f" {(title or '').lower()} "
+    for word in _SENIOR_WORDS:
+        if word in text:
+            return "senior"
+    for word in _ENTRY_WORDS:
+        if word in text:
+            return "entry"
+    return "mid"
+
+
+def seniority_from_years(years: float | None) -> str:
+    """Map resume experience onto the same three levels.
+
+    Used only when the user hasn't stated a preference, so that someone who
+    never opens settings still gets sensible ordering rather than the blanket
+    "junior roles are bad" assumption this replaces.
+    """
+    if years is None:
+        return ""
+    if years < 2:
+        return "entry"
+    if years < 7:
+        return "mid"
+    return "senior"
+
+
+_LEVEL_ORDER = {"entry": 0, "mid": 1, "senior": 2}
+
+
+def seniority_distance(a: str, b: str) -> int:
+    """How many rungs apart two levels are, or -1 if either is unreadable."""
+    if a not in _LEVEL_ORDER or b not in _LEVEL_ORDER:
+        return -1
+    return abs(_LEVEL_ORDER[a] - _LEVEL_ORDER[b])
+
+
+# 40 hours x 52 weeks. Matches the frontend's own conversion when it sorts by
+# compensation, so a job cannot rank differently in the list than in scoring.
+HOURS_PER_YEAR = 2080
+
+
+def annual_comp(comp_min: float | None, comp_max: float | None, comp_unit: str) -> float | None:
+    """Best-case annual pay for a posting, or None when it publishes no range.
+
+    None is the common case -- most boards omit salary entirely -- and it
+    means "unknown", never "zero". A caller must skip the salary preference
+    rather than treat an unpublished range as failing it.
+    """
+    best = comp_max if comp_max else comp_min
+    if not best:
+        return None
+    return best * HOURS_PER_YEAR if comp_unit == "hour" else best
