@@ -53,6 +53,13 @@ class User(Base):
     min_salary: Mapped[float | None] = mapped_column(Float, nullable=True)
     """Annual floor. NULL means no floor, which is distinct from a floor of 0."""
 
+    address: Mapped[str] = mapped_column(String(500), default="")
+    """Postal address. Profile data for applications -- scoring never reads it;
+    target_city and target_country are what drive location matching."""
+
+    phone: Mapped[str] = mapped_column(String(50), default="")
+    """Contact number. Also profile-only, never used in scoring."""
+
     work_mode: Mapped[str] = mapped_column(String(20), default="")
     """"remote" | "hybrid" | "onsite", or empty for no preference.
 

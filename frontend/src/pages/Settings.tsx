@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
+import AccountSecurity from "../components/AccountSecurity";
 import { ApiError, type Seniority, type WorkMode } from "../api";
 
 const SENIORITY_LEVELS: { value: Seniority; label: string; blurb: string }[] = [
@@ -31,6 +32,8 @@ export default function Settings() {
   const [seniority, setSeniority] = useState<Seniority>("");
   // Held as a string so the box can be genuinely empty; "" means no floor.
   const [minSalary, setMinSalary] = useState("");
+  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState("");
 
   const [resume, setResume] = useState<api.Resume | null>(null);
   const [saving, setSaving] = useState(false);
@@ -49,6 +52,8 @@ export default function Settings() {
     setWorkMode(user.work_mode);
     setSeniority(user.seniority);
     setMinSalary(user.min_salary != null ? String(user.min_salary) : "");
+    setAddress(user.address);
+    setPhone(user.phone);
   }, [user]);
 
   useEffect(() => {
@@ -72,6 +77,8 @@ export default function Settings() {
         seniority,
         // 0 tells the API to clear the floor; the column stores NULL.
         min_salary: minSalary.trim() === "" ? 0 : Number(minSalary),
+        address,
+        phone,
       });
       await refreshUser();
       setSaved(true);
@@ -127,9 +134,29 @@ export default function Settings() {
             <input id="set-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </div>
           <div className="field">
-            <label htmlFor="set-email">Email</label>
-            <input id="set-email" value={user.email} disabled />
-            <div className="field-hint">Sign-in address. Changing it isn't supported yet.</div>
+            <label htmlFor="set-phone">Phone</label>
+            <input
+              id="set-phone"
+              type="tel"
+              autoComplete="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+1 555 0100"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="set-address">Address</label>
+            <textarea
+              id="set-address"
+              rows={3}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Street, city, postal code"
+            />
+            <div className="field-hint">
+              Contact details for your applications. Neither affects matching —
+              location scoring uses the city and country above.
+            </div>
           </div>
         </section>
 
@@ -265,6 +292,10 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      <div className="settings-grid account-grid">
+        <AccountSecurity email={user.email} onEmailChanged={refreshUser} />
+      </div>
     </div>
   );
 }
