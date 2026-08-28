@@ -1,5 +1,4 @@
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -156,41 +155,33 @@ def sources_status():
 
 
 # ---- Serve the built React frontend (single-service deploy) ----------
-def safe_static_file(root: Path, url_path: str) -> Path | None:
-    """Resolve a URL path to a file *inside* `root`, or None.
+def static_root_allowlist(root: Path) -> dict[str, Path]:
+    """The flat files directly under `root`, keyed by name.
 
-    The SPA catch-all takes its path straight from the URL, so a naive
-    `root / url_path` resolves "%2e%2e/%2e%2e/.env" (Starlette percent-decodes
-    before this sees it) to a real file outside the bundle -- which served
-    source, config, and the JWT secret.
-
-    Containment is enforced with ``os.path.commonpath``: if the resolved
-    candidate doesn't share the whole of ``root`` as a common prefix, it has
-    escaped and we return None so the caller serves index.html. commonpath is
-    used rather than ``Path.is_relative_to`` because it is the form static
-    analysis recognises as a path-traversal guard -- the two are equivalent
-    here, and a scanner that can prove the check is real is worth more than a
-    slightly terser one it cannot.
+    Hashed assets are served by the `/assets` StaticFiles mount; this covers
+    only the handful of files that sit at the bundle root (index.html, and any
+    favicon/robots.txt Vite emits from public/). Enumerating them once at
+    startup means the catch-all never builds a filesystem path out of the URL
+    at all -- it does a dict lookup on the requested name. That is what closed
+    the traversal that read backend/.env: there is no `root / url_path` for
+    "%2e%2e/%2e%2e/.env" to resolve through, so an allowlist miss (a real
+    client route, or an attack) simply falls through to index.html.
     """
-    if not url_path:
-        return None
-    root_real = os.path.realpath(root)
-    candidate = os.path.realpath(os.path.join(root_real, url_path))
-    if os.path.commonpath([root_real, candidate]) != root_real:
-        return None
-    resolved = Path(candidate)
-    return resolved if resolved.is_file() else None
+    return {entry.name: entry for entry in root.iterdir() if entry.is_file()}
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
+    _ROOT_FILES = static_root_allowlist(FRONTEND_DIST)
+    _INDEX = FRONTEND_DIST / "index.html"
+
     @app.get("/{full_path:path}")
     def spa_catch_all(full_path: str):
-        served = safe_static_file(FRONTEND_DIST, full_path)
-        if served is not None:
-            return FileResponse(served)
-        # Real client-side routes like "/settings" have no file and correctly
-        # fall through to the SPA entrypoint.
-        return FileResponse(FRONTEND_DIST / "index.html")
+        # Pure dict lookup on the requested name -- no path is built from the
+        # URL, so there is nothing for a "../" payload to traverse through. A
+        # miss is a real client route (e.g. /settings) or an attack; both get
+        # the SPA entrypoint.
+        served = _ROOT_FILES.get(full_path)
+        return FileResponse(served if served is not None else _INDEX)
