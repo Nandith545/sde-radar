@@ -19,12 +19,17 @@ more than they would for a throwaway.
 ## Commands
 
 ```bash
-./scripts/verify.sh              # everything CI runs, ~60s. Use this before pushing.
+./scripts/verify.sh              # everything CI runs. Use this before pushing.
 
+cd backend && alembic upgrade head               # apply migrations (required before first run)
 cd backend && uvicorn app.main:app --reload      # API on :8000
 cd frontend && npm run dev                       # Vite dev server on :5173, proxies /api
 
-cd backend  && python test_dedup.py              # dedup regression test
+# Individual gates
+cd backend  && pytest                            # 128 tests
+cd backend  && ruff check app/ tests/ && ruff format app/ tests/
+cd backend  && mypy
+cd backend  && alembic check                     # models vs migrations drift
 cd frontend && npm run lint && npm run build     # lint + typecheck (build = tsc -b && vite build)
 ```
 
@@ -72,20 +77,31 @@ constraint, while the `sources` JSON column holds the full list of
 
 ## Gotchas
 
-**There are no migrations.** `Base.metadata.create_all()` runs at startup. It
-creates missing *tables* but will **not** add *columns* to a table that
-already exists. If you touch `models.py`, a running database won't pick up
-the change — drop and recreate locally, `ALTER TABLE` by hand on Render, or
-finally adopt Alembic (the right long-term answer).
+**Alembic owns the schema, not `create_all()`.** If you change `models.py`,
+generate a migration in the same commit:
 
-**`test_dedup.py` drops and recreates every table** on whatever
-`DATABASE_URL` points at. `verify.sh` handles this safely; running it
-directly against a database you care about will destroy it.
+```bash
+cd backend && alembic revision --autogenerate -m "what changed"
+```
+
+`alembic check` runs in CI and in `verify.sh`, so drift fails the build rather
+than surfacing as a runtime error against a real database. The app refuses to
+start if tables are missing, with a message telling you to run `upgrade head`.
+
+**Tests use a throwaway database** — SQLite in memory by default, or whatever
+`TEST_DATABASE_URL` points at (CI points it at Postgres 16). The `client`
+fixture deliberately does *not* run the app's lifespan, because that would
+create/seed the real database behind the dependency override.
 
 **Staging runs SQLite, production runs Postgres.** Render's free tier allows
 only one free Postgres per workspace. So staging can't catch a
 Postgres-specific bug — CI covers that by running the suite against real
 Postgres 16 on every PR.
+
+**Login throttling is per-process and in-memory** (`app/rate_limit.py`).
+It stops casual credential stuffing against one instance. Scale past one
+replica and each keeps its own tally, so the effective limit multiplies. The
+fix at that point is Redis or an edge limiter — noted, deliberately deferred.
 
 **Skill extraction is keyword-based, not LLM-based** (`services/skills.py`).
 That's deliberate: no per-user inference cost, no external AI dependency. It
@@ -100,10 +116,10 @@ access, so they have never actually run:
 - **The Dockerfile has never been built.** It's what Render deploys. Worth
   running `docker build -t sde-radar .` early.
 - **The Jooble, Remotive and Arbeitnow connectors have never hit a live
-  API.** They're coded against documented response shapes with defensive
-  parsing, but field names may have drifted. Adzuna is the only connector
-  with a real-world track record. Test with `POST /api/jobs/refresh` and
-  watch the logs.
+  API.** There are respx tests asserting they parse each provider's
+  *documented* response shape correctly, and that malformed data degrades
+  rather than crashing — but that is not the same as the live API still
+  returning that shape. Test with `POST /api/jobs/refresh` and watch the logs.
 
 ## Workflow
 

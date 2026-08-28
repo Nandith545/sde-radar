@@ -1,5 +1,6 @@
 import datetime
-from pydantic import BaseModel, EmailStr, Field
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .models import StatusEnum
 
@@ -31,8 +32,7 @@ class UserOut(BaseModel):
     target_titles: str
     has_resume: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserUpdate(BaseModel):
@@ -48,8 +48,7 @@ class ResumeOut(BaseModel):
     years_experience: float | None
     uploaded_at: datetime.datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---- Jobs -------------------------------------------------------------
@@ -72,8 +71,7 @@ class JobOut(BaseModel):
     status: StatusEnum
     notes: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MatchUpdate(BaseModel):

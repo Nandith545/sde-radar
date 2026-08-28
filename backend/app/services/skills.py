@@ -3,8 +3,9 @@ they can be compared on equal footing. Each canonical tag maps to a list of
 surface forms/aliases that might appear in free text; matching is case
 insensitive and uses word boundaries so "Go" doesn't match inside "Google".
 """
+
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 SKILL_ALIASES: dict[str, list[str]] = {
     "Java": ["java"],
@@ -31,7 +32,14 @@ SKILL_ALIASES: dict[str, list[str]] = {
     "Docker": ["docker"],
     "Kubernetes": ["kubernetes", "k8s"],
     "Terraform": ["terraform"],
-    "CI/CD": ["ci/cd", "continuous integration", "continuous deployment", "gitlab ci", "github actions", "jenkins"],
+    "CI/CD": [
+        "ci/cd",
+        "continuous integration",
+        "continuous deployment",
+        "gitlab ci",
+        "github actions",
+        "jenkins",
+    ],
     "Microservices": ["microservices", "microservice"],
     "Distributed Systems": ["distributed systems", "distributed system"],
     "REST APIs": ["restful", "rest api", "rest apis"],
@@ -63,8 +71,10 @@ SKILL_ALIASES: dict[str, list[str]] = {
 CANONICAL_TAGS = list(SKILL_ALIASES.keys())
 
 _COMPILED = {
-    tag: [re.compile(r"(?<![a-zA-Z0-9])" + re.escape(alias.strip()) + r"(?![a-zA-Z0-9])", re.IGNORECASE)
-          for alias in aliases]
+    tag: [
+        re.compile(r"(?<![a-zA-Z0-9])" + re.escape(alias.strip()) + r"(?![a-zA-Z0-9])", re.IGNORECASE)
+        for alias in aliases
+    ]
     for tag, aliases in SKILL_ALIASES.items()
 }
 

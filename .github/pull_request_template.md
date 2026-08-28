@@ -15,19 +15,22 @@
 
 ## Checklist
 
-- [ ] CI is green (backend tests, frontend lint/build, end-to-end)
+- [ ] `./scripts/verify.sh` passes locally
+- [ ] CI is green (lint, types, tests, migration check, end-to-end)
 - [ ] I ran the app locally and clicked through the change
-- [ ] If I changed the database models, I noted the migration impact below
+- [ ] New behaviour has a test covering it
+- [ ] If I changed the database models, the migration is in this PR
 - [ ] If I added a new config/env var, I added it to `backend/.env.example`,
       `render.yaml`, and the README
 
 ## Database / migration impact
 
-<!-- The app uses `Base.metadata.create_all()`, which creates missing TABLES
-     but will NOT add new COLUMNS to a table that already exists. If you
-     added or changed a column, say so here and note what has to happen on
-     the deployed database (usually a manual `ALTER TABLE`). Delete this
-     section if your change doesn't touch models.py. -->
+<!-- If you changed models.py, this PR must include the Alembic migration
+     (`alembic revision --autogenerate -m "..."`). CI's `alembic check` will
+     fail otherwise. Note anything a reviewer should watch for — especially
+     column renames, which autogenerate turns into a drop plus an add and so
+     silently destroy the existing data. Delete this section if your change
+     doesn't touch models.py. -->
 
 N/A
 

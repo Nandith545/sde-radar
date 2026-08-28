@@ -1,12 +1,13 @@
 """Adzuna Jobs API — https://developer.adzuna.com/ (free tier, requires a
 free APP_ID + APP_KEY).
 """
+
 import logging
 
 import httpx
 
 from ...config import settings
-from .base import RawJob
+from .base import RawJob, first_id
 
 logger = logging.getLogger(__name__)
 
@@ -46,20 +47,28 @@ def fetch(search_terms: list[str], where: str) -> list[RawJob]:
 
             for item in data.get("results", []):
                 try:
-                    out.append(RawJob(
-                        source=NAME,
-                        external_id=str(item.get("id")),
-                        title=(item.get("title") or "").strip() or "Untitled role",
-                        company=((item.get("company") or {}).get("display_name") or "").strip(),
-                        location=((item.get("location") or {}).get("display_name") or where).strip(),
-                        description=item.get("description", ""),
-                        comp_min=item.get("salary_min"),
-                        comp_max=item.get("salary_max"),
-                        comp_unit="year",
-                        job_type=(item.get("contract_time") or "full_time").replace("_", "-"),
-                        posted=(item.get("created") or "")[:10],
-                        url=item.get("redirect_url", ""),
-                    ))
-                except Exception as exc:  # noqa: BLE001 - one bad item shouldn't kill the batch
+                    ext_id = first_id(item.get("id"), item.get("redirect_url"))
+                    title = (item.get("title") or "").strip()
+                    # A listing with no id or no title is unusable noise, and an
+                    # id-less one would collide with every other id-less one.
+                    if not ext_id or not title:
+                        continue
+                    out.append(
+                        RawJob(
+                            source=NAME,
+                            external_id=ext_id,
+                            title=title,
+                            company=((item.get("company") or {}).get("display_name") or "").strip(),
+                            location=((item.get("location") or {}).get("display_name") or where).strip(),
+                            description=item.get("description", ""),
+                            comp_min=item.get("salary_min"),
+                            comp_max=item.get("salary_max"),
+                            comp_unit="year",
+                            job_type=(item.get("contract_time") or "full_time").replace("_", "-"),
+                            posted=(item.get("created") or "")[:10],
+                            url=item.get("redirect_url", ""),
+                        )
+                    )
+                except Exception as exc:
                     logger.warning("[adzuna] skipped malformed item: %s", exc)
     return out

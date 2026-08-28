@@ -12,3 +12,6 @@ python-multipart==0.0.20
 pypdf==5.1.0
 httpx==0.28.1
 apscheduler==3.10.4
+# Runtime, not dev-only: the container entrypoint runs
+# `alembic upgrade head` before starting the server.
+alembic==1.14.0

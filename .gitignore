@@ -21,3 +21,12 @@ backend/static/
 .vscode/
 
 .verify-artifacts/
+
+# local SQLite databases
+*.db
+
+# Python tooling caches
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/

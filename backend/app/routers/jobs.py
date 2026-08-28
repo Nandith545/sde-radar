@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
-from ..services.matching import score_job
 from ..services.job_ingestion import refresh_from_all_sources
+from ..services.matching import score_job
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -21,12 +21,23 @@ def _source_names(job: models.JobListing) -> list[str]:
 
 def _to_job_out(job: models.JobListing, status: models.StatusEnum, notes: str, result) -> schemas.JobOut:
     return schemas.JobOut(
-        id=job.id, title=job.title, company=job.company, location=job.location,
-        comp_min=job.comp_min, comp_max=job.comp_max, comp_unit=job.comp_unit,
-        job_type=job.job_type, posted=job.posted, url=job.url, skills=job.skills,
+        id=job.id,
+        title=job.title,
+        company=job.company,
+        location=job.location,
+        comp_min=job.comp_min,
+        comp_max=job.comp_max,
+        comp_unit=job.comp_unit,
+        job_type=job.job_type,
+        posted=job.posted,
+        url=job.url,
+        skills=job.skills,
         sources=_source_names(job),
-        score=result.score, reason=result.reason, flag=result.flag,
-        status=status, notes=notes,
+        score=result.score,
+        reason=result.reason,
+        flag=result.flag,
+        status=status,
+        notes=notes,
     )
 
 
@@ -34,7 +45,8 @@ def _matched_jobs(db: Session, user: models.User) -> list[schemas.JobOut]:
     resume = db.query(models.Resume).filter(models.Resume.user_id == user.id).first()
     jobs = db.query(models.JobListing).all()
     match_map = {
-        m.job_id: m for m in db.query(models.UserJobMatch).filter(models.UserJobMatch.user_id == user.id).all()
+        m.job_id: m
+        for m in db.query(models.UserJobMatch).filter(models.UserJobMatch.user_id == user.id).all()
     }
 
     out = []
@@ -68,15 +80,21 @@ def job_stats(current_user: models.User = Depends(get_current_user), db: Session
 
 
 @router.patch("/{job_id}", response_model=schemas.JobOut)
-def update_match(job_id: int, payload: schemas.MatchUpdate, current_user: models.User = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
+def update_match(
+    job_id: int,
+    payload: schemas.MatchUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     job = db.query(models.JobListing).filter(models.JobListing.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    match = db.query(models.UserJobMatch).filter(
-        models.UserJobMatch.user_id == current_user.id, models.UserJobMatch.job_id == job_id
-    ).first()
+    match = (
+        db.query(models.UserJobMatch)
+        .filter(models.UserJobMatch.user_id == current_user.id, models.UserJobMatch.job_id == job_id)
+        .first()
+    )
     if not match:
         match = models.UserJobMatch(user_id=current_user.id, job_id=job_id)
         db.add(match)

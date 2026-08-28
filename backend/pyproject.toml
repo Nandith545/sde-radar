@@ -1,0 +1,72 @@
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = ["venv", "alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes -- undefined names, unused imports
+  "I",    # isort -- import ordering
+  "UP",   # pyupgrade -- modern syntax for the target version
+  "B",    # flake8-bugbear -- likely bugs (mutable defaults, etc.)
+  "C4",   # comprehensions
+  "SIM",  # simplifications
+  "T20",  # flake8-print -- no stray print() in application code
+  "RUF",  # ruff's own rules
+]
+ignore = [
+  "E501",    # line length is enforced by the formatter, not the linter
+  "B008",    # function call in argument default -- this is exactly how FastAPI's
+             # Depends()/File() are meant to be used
+  "RUF001",  # "ambiguous" unicode: en dashes are used deliberately here, both in
+             # displayed salary ranges and in the regex that parses them
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use asserts, magic values, and long literal fixtures.
+"tests/**" = ["T20"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app"]
+# Third-party packages without stubs (passlib, jose, apscheduler) shouldn't
+# produce noise -- we care about errors in our own code.
+ignore_missing_imports = true
+# Type-check the bodies of unannotated functions too. This is where the real
+# bugs hide, and it costs nothing to turn on.
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+# Deliberately NOT enabling disallow_untyped_defs yet: FastAPI route handlers
+# get their types from Depends() defaults, and annotating every one of them
+# adds noise without catching bugs. Revisit if the service layer grows.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Makes `from app import ...` resolve when running pytest from backend/,
+# without needing the project installed or PYTHONPATH set by hand.
+pythonpath = ["."]
+# Show why tests were skipped, treat unregistered marks as errors, and make
+# any warning that reaches the suite visible rather than silently swallowed.
+addopts = "-ra --strict-markers"
+filterwarnings = [
+  "ignore::DeprecationWarning:passlib.*",
+  "ignore::DeprecationWarning:jose.*",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/services/seed_jobs.py"]  # a static data file, nothing to cover
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]

@@ -1,0 +1,47 @@
+# Catches the cheap mistakes before they reach a commit, so CI is spent on
+# real failures rather than formatting.
+#
+# Install once:
+#   pip install pre-commit && pre-commit install
+#
+# Run against everything (useful the first time):
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      # The single most valuable hook here: this repo is public, and a
+      # committed private key is not recoverable by deleting the commit.
+      - id: detect-private-key
+      - id: check-case-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        files: ^backend/app/
+        args: [--config-file=backend/pyproject.toml]
+        # mypy in pre-commit runs in its own isolated env, so it needs the
+        # typed dependencies declared here to resolve imports.
+        additional_dependencies:
+          - pydantic==2.10.4
+          - sqlalchemy==2.0.36
+          - fastapi==0.115.6

@@ -12,6 +12,7 @@ an exact match first (fast path, covers the vast majority of true
 duplicates), then fall back to a fuzzy title match scoped to the same
 normalized company (never fuzzy-match across different companies).
 """
+
 import difflib
 import re
 
@@ -60,8 +61,9 @@ def make_dedup_key(title: str, company: str, location: str) -> str:
     return f"{normalize_company(company)}|{normalize_title(title)}|{normalize_location(location)}"
 
 
-def find_duplicate(db: Session, *, title: str, company: str, location: str,
-                    exclude_id: int | None = None) -> models.JobListing | None:
+def find_duplicate(
+    db: Session, *, title: str, company: str, location: str, exclude_id: int | None = None
+) -> models.JobListing | None:
     """Return an existing JobListing that's almost certainly the same real
     posting, or None. Never crosses company boundaries.
     """
@@ -79,9 +81,7 @@ def find_duplicate(db: Session, *, title: str, company: str, location: str,
         return exact
 
     # Fuzzy fallback: same normalized company, similar-enough title.
-    candidates = db.query(models.JobListing).filter(
-        models.JobListing.company_norm == company_norm
-    )
+    candidates = db.query(models.JobListing).filter(models.JobListing.company_norm == company_norm)
     if exclude_id is not None:
         candidates = candidates.filter(models.JobListing.id != exclude_id)
 

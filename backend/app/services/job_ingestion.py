@@ -1,14 +1,15 @@
 """Orchestrates pulling listings from every configured job-board connector,
 deduplicating across them, and upserting into the shared job pool.
 """
+
 import logging
 
 from sqlalchemy.orm import Session
 
 from .. import models
 from .dedup import find_duplicate, make_dedup_key, normalize_company, normalize_title
-from .skills import extract_skills
 from .seed_jobs import SEED_JOBS
+from .skills import extract_skills
 from .sources import REGISTRY, active_sources
 from .sources.base import RawJob
 
@@ -65,7 +66,13 @@ def _ingest_raw_jobs(db: Session, raw_jobs: list[RawJob]) -> dict:
     by_source_id: dict[tuple[str, str], models.JobListing] = {}
     for job in db.query(models.JobListing).all():
         for entry in job.sources or []:
-            by_source_id[(entry.get("name"), entry.get("external_id"))] = job
+            name = entry.get("name")
+            ext_id = entry.get("external_id")
+            # Skip malformed entries rather than keying the map on None --
+            # a single bad row would otherwise collide with every other
+            # incomplete entry and merge unrelated postings together.
+            if isinstance(name, str) and isinstance(ext_id, str):
+                by_source_id[(name, ext_id)] = job
 
     added = 0
     merged = 0
@@ -107,10 +114,18 @@ def seed_if_empty(db: Session) -> int:
         return 0
     raw_jobs = [
         RawJob(
-            source="seed", external_id=job["external_id"], title=job["title"], company=job["company"],
-            location=job["location"], description=job["description"], comp_min=job["comp_min"],
-            comp_max=job["comp_max"], comp_unit=job["comp_unit"], job_type=job["job_type"],
-            posted=job["posted"], url=job["url"],
+            source="seed",
+            external_id=job["external_id"],
+            title=job["title"],
+            company=job["company"],
+            location=job["location"],
+            description=job["description"],
+            comp_min=job["comp_min"],
+            comp_max=job["comp_max"],
+            comp_unit=job["comp_unit"],
+            job_type=job["job_type"],
+            posted=job["posted"],
+            url=job["url"],
         )
         for job in SEED_JOBS
     ]
@@ -118,8 +133,9 @@ def seed_if_empty(db: Session) -> int:
     return result["added"]
 
 
-def refresh_from_all_sources(db: Session, *, search_terms: list[str] | None = None,
-                              where: str = "Seattle, WA") -> dict:
+def refresh_from_all_sources(
+    db: Session, *, search_terms: list[str] | None = None, where: str = "Seattle, WA"
+) -> dict:
     """Pull fresh listings from every connector that has credentials
     configured, dedup them against each other and the existing pool, and
     upsert. No-ops gracefully (returns zero counts) if nothing is
@@ -137,7 +153,7 @@ def refresh_from_all_sources(db: Session, *, search_terms: list[str] | None = No
             continue
         try:
             fetched = module.fetch(terms, where)
-        except Exception as exc:  # noqa: BLE001 - one connector failing shouldn't take down a refresh
+        except Exception as exc:
             logger.warning("[%s] connector raised an exception, skipping: %s", module.NAME, exc)
             continue
         logger.info("[%s] fetched %d listings", module.NAME, len(fetched))
@@ -147,6 +163,9 @@ def refresh_from_all_sources(db: Session, *, search_terms: list[str] | None = No
     result["sources_used"] = sources_used
     logger.info(
         "Refresh complete: %d new, %d merged into existing postings, %d same-source updates (sources: %s)",
-        result["added"], result["merged_into_existing"], result["same_source_updates"], ", ".join(sources_used),
+        result["added"],
+        result["merged_into_existing"],
+        result["same_source_updates"],
+        ", ".join(sources_used),
     )
     return result

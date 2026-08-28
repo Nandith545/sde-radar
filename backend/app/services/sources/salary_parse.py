@@ -1,6 +1,7 @@
 """Best-effort extraction of a min/max compensation figure from free-text
 salary strings, for connectors that don't return structured salary fields.
 """
+
 import re
 
 _RANGE = re.compile(

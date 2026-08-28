@@ -1,4 +1,4 @@
-from . import adzuna, jooble, remotive, arbeitnow
+from . import adzuna, arbeitnow, jooble, remotive
 
 # Order matters only for logging/readability; ingestion treats all sources
 # equally and dedups across whichever ones are configured.

@@ -2,11 +2,28 @@ import datetime
 import enum
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, ForeignKey, DateTime, Enum, UniqueConstraint, JSON
+    JSON,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+
+def utcnow() -> datetime.datetime:
+    """Timezone-aware UTC now.
+
+    `datetime.utcnow()` is deprecated from Python 3.12 and returns a naive
+    datetime, which then silently compares wrong against aware ones.
+    """
+    return datetime.datetime.now(datetime.UTC)
 
 
 class StatusEnum(str, enum.Enum):
@@ -21,66 +38,82 @@ class StatusEnum(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    full_name = Column(String(255), nullable=False, default="")
-    hashed_password = Column(String(255), nullable=False)
-    target_city = Column(String(255), nullable=False, default="Seattle, WA")
-    target_titles = Column(String(500), nullable=False, default="Software Engineer")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(255), default="")
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    target_city: Mapped[str] = mapped_column(String(255), default="Seattle, WA")
+    target_titles: Mapped[str] = mapped_column(String(500), default="Software Engineer")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    resume = relationship("Resume", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    matches = relationship("UserJobMatch", back_populates="user", cascade="all, delete-orphan")
+    resume: Mapped["Resume | None"] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    matches: Mapped[list["UserJobMatch"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Resume(Base):
     __tablename__ = "resumes"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    filename = Column(String(255), nullable=False, default="")
-    raw_text = Column(Text, nullable=False, default="")
-    skills = Column(JSON, nullable=False, default=list)  # list[str] canonical skill tags
-    years_experience = Column(Float, nullable=True)
-    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    raw_text: Mapped[str] = mapped_column(Text, default="")
+    skills: Mapped[list[str]] = mapped_column(JSON, default=list)
+    years_experience: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uploaded_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    user = relationship("User", back_populates="resume")
+    user: Mapped["User"] = relationship(back_populates="resume")
 
 
 class JobListing(Base):
     __tablename__ = "job_listings"
+    __table_args__ = (
+        # Dedup does an exact lookup on dedup_key, then a company-scoped fuzzy
+        # pass over title_norm. This composite covers the second access pattern.
+        Index("ix_job_listings_company_title", "company_norm", "title_norm"),
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    source = Column(String(50), nullable=False, default="seed")  # first source this was seen on
-    sources = Column(JSON, nullable=False, default=list)  # every board this posting was matched across
-    external_id = Column(String(255), unique=True, index=True, nullable=False)
-    title = Column(String(500), nullable=False)
-    company = Column(String(255), nullable=False, default="")
-    location = Column(String(255), nullable=False, default="")
-    description = Column(Text, nullable=False, default="")
-    comp_min = Column(Float, nullable=True)
-    comp_max = Column(Float, nullable=True)
-    comp_unit = Column(String(20), nullable=False, default="year")  # "year" | "hour"
-    job_type = Column(String(50), nullable=False, default="Full-time")
-    posted = Column(String(20), nullable=False, default="")  # ISO date string
-    url = Column(String(1000), nullable=False, default="")
-    skills = Column(JSON, nullable=False, default=list)  # list[str] canonical skill tags
-    dedup_key = Column(String(700), index=True, nullable=False, default="")
-    company_norm = Column(String(255), index=True, nullable=False, default="")
-    title_norm = Column(String(500), nullable=False, default="")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    source: Mapped[str] = mapped_column(String(50), default="seed")
+    """The first board this posting was seen on."""
+
+    sources: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    """Every board it has been matched across: {name, external_id, url}."""
+
+    external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    """Namespaced as "<source>:<their id>" so it stays unique across boards."""
+
+    title: Mapped[str] = mapped_column(String(500))
+    company: Mapped[str] = mapped_column(String(255), default="")
+    location: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    comp_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    comp_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    comp_unit: Mapped[str] = mapped_column(String(20), default="year")  # "year" | "hour"
+    job_type: Mapped[str] = mapped_column(String(50), default="Full-time")
+    posted: Mapped[str] = mapped_column(String(20), default="")  # ISO date string
+    url: Mapped[str] = mapped_column(String(1000), default="")
+    skills: Mapped[list[str]] = mapped_column(JSON, default=list)
+    dedup_key: Mapped[str] = mapped_column(String(700), index=True, default="")
+    company_norm: Mapped[str] = mapped_column(String(255), index=True, default="")
+    title_norm: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class UserJobMatch(Base):
     __tablename__ = "user_job_matches"
     __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_job"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    job_id = Column(Integer, ForeignKey("job_listings.id"), nullable=False)
-    status = Column(Enum(StatusEnum), nullable=False, default=StatusEnum.new)
-    notes = Column(Text, nullable=False, default="")
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job_listings.id"), index=True)
+    status: Mapped[StatusEnum] = mapped_column(Enum(StatusEnum), default=StatusEnum.new)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
-    user = relationship("User", back_populates="matches")
-    job = relationship("JobListing")
+    user: Mapped["User"] = relationship(back_populates="matches")
+    job: Mapped["JobListing"] = relationship()

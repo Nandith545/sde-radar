@@ -4,9 +4,10 @@ The score is a transparent, explainable heuristic (not a black box) so the
 frontend can show *why* a job scored the way it did -- this mirrors how the
 single-user SDE Radar prototype presented its matches.
 """
+
 from dataclasses import dataclass
 
-from ..models import JobListing, User, Resume
+from ..models import JobListing, Resume, User
 
 SENIOR_WORDS = ["senior", "staff", "principal", "lead", "l5", "l6", "sde ii", "sde2", "sde 2", "iii", "iv"]
 JUNIOR_WORDS = ["junior", "jr.", "jr ", "entry level", "intern", "internship", "new grad"]
@@ -24,10 +25,7 @@ def _city_matches(job_location: str, target_city: str) -> bool:
     if not job_location or not target_city:
         return False
     job_l = job_location.lower()
-    for part in target_city.lower().replace(",", " ").split():
-        if len(part) > 2 and part in job_l:
-            return True
-    return False
+    return any(len(part) > 2 and part in job_l for part in target_city.lower().replace(",", " ").split())
 
 
 def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult:
@@ -37,10 +35,7 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
     overlap = resume_skills & job_skills
     overlap_count = len(overlap)
 
-    if job_skills:
-        coverage = overlap_count / len(job_skills)
-    else:
-        coverage = 0.0
+    coverage = overlap_count / len(job_skills) if job_skills else 0.0
 
     score = coverage * 65 + min(overlap_count, 8) * 4
 
@@ -54,14 +49,20 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
         score += 8
 
     flag_parts = []
-    if any(w in title_l for w in PART_TIME_WORDS) or (job.job_type or "").lower() in ("part-time", "contract"):
+    if any(w in title_l for w in PART_TIME_WORDS) or (job.job_type or "").lower() in (
+        "part-time",
+        "contract",
+    ):
         flag_parts.append("Looks like part-time or contract work, not a full-time role.")
         score -= 10
     if any(w in title_l for w in JUNIOR_WORDS):
         flag_parts.append("Title suggests a junior/entry-level position.")
         score -= 15
-    if resume and resume.years_experience and resume.years_experience >= 7 and any(
-        w in title_l for w in JUNIOR_WORDS
+    if (
+        resume
+        and resume.years_experience
+        and resume.years_experience >= 7
+        and any(w in title_l for w in JUNIOR_WORDS)
     ):
         flag_parts.append("Your resume shows senior-level experience; this posting reads entry-level.")
 
@@ -69,7 +70,11 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
 
     if overlap_count:
         top = sorted(overlap)[:4]
-        reason = f"Overlaps on {', '.join(top)}" + (f" (+{overlap_count - 4} more)" if overlap_count > 4 else "") + "."
+        reason = (
+            f"Overlaps on {', '.join(top)}"
+            + (f" (+{overlap_count - 4} more)" if overlap_count > 4 else "")
+            + "."
+        )
         if title_hit:
             reason += " Title matches one of your target roles."
     elif title_hit:

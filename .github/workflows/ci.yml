@@ -61,15 +61,36 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
-      - name: Check the app imports cleanly
+      - name: Lint (ruff)
         working-directory: backend
-        run: python -c "from app.main import app; print('app import OK')"
+        run: ruff check app/ tests/
 
-      - name: Run cross-source dedup regression test
+      - name: Check formatting (ruff)
         working-directory: backend
-        run: python test_dedup.py
+        run: ruff format --check app/ tests/
+
+      - name: Type-check (mypy)
+        working-directory: backend
+        run: mypy
+
+      - name: Verify migrations match the models
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          # An autogenerate that produces changes means someone edited
+          # models.py without adding a migration -- which would deploy fine
+          # and then break at runtime on a real database.
+          alembic check
+
+      - name: Run tests
+        working-directory: backend
+        env:
+          # Exercise the suite against the same engine production uses, not
+          # the SQLite fallback.
+          TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=75
 
   # -------------------------------------------------------------------
   # Frontend: lint, type-check and production build.

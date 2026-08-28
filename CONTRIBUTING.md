@@ -19,12 +19,16 @@ cd <your-repo>
 # Backend
 cd backend
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # includes runtime deps + test/lint tooling
 cp .env.example .env          # fill in DATABASE_URL; API keys are optional
+alembic upgrade head          # create the schema
 
 # Frontend (second terminal)
 cd frontend
 npm install
+
+# Optional but recommended: catch formatting/secret mistakes before commit
+pip install pre-commit && pre-commit install
 ```
 
 Then run the two dev servers — see the "Run it locally" section of the
@@ -88,15 +92,24 @@ regressions that are invisible in a desktop browser window.
 If you'd rather run the pieces individually:
 
 ```bash
-cd backend  && ./venv/bin/python test_dedup.py          # dedup tests
+cd backend  && pytest                                   # 128 tests
+cd backend  && ruff check app/ tests/                   # lint
+cd backend  && ruff format app/ tests/                  # format
+cd backend  && mypy                                     # type check
+cd backend  && alembic check                            # migration drift
 cd frontend && npm run lint && npm run build            # lint + type-check
 cd frontend && BASE_URL=http://localhost:8000 npm run test:e2e
 ```
 
-⚠️ `test_dedup.py` **drops and recreates every table** on whatever
-`DATABASE_URL` points at. `verify.sh` handles this safely by creating its own
-scratch database; if you run the test directly, point it somewhere
-disposable.
+**If you changed `models.py`, generate a migration in the same commit:**
+
+```bash
+cd backend && alembic revision --autogenerate -m "add company filter column"
+```
+
+`alembic check` fails the build otherwise. That is deliberate — a model change
+without a migration deploys perfectly and then breaks against the real
+database, which is a miserable thing to debug at 1am.
 
 ### 4. Push and open a pull request
 
@@ -189,24 +202,33 @@ the code, permanently.
 
 ## Changing the database models
 
-The app calls `Base.metadata.create_all()` at startup. This is worth
-understanding because it has one sharp edge:
+Alembic owns the schema. Change `models.py`, then generate a migration **in
+the same commit**:
 
-- ✅ It **creates tables** that don't exist yet — so a fresh deploy works.
-- ❌ It does **not add columns** to a table that already exists.
+```bash
+cd backend
+alembic revision --autogenerate -m "add company filter column"
+alembic upgrade head            # apply it locally
+```
 
-So if you add a column to `models.py`, a database that's already running
-won't get it, and you'll see errors about a missing column. Your options:
+Read the generated file before committing it — autogenerate is good but not
+infallible, particularly with column renames (which it sees as a drop plus an
+add, silently destroying the data).
 
-1. **Development:** just drop and recreate the local database.
-2. **Production:** run the `ALTER TABLE` by hand against the Render Postgres
-   instance before deploying the code that needs it.
-3. **Properly:** adopt [Alembic](https://alembic.sqlalchemy.org/) for real
-   migrations. This is the top item on the "next steps" list in the README,
-   and the right move if this project outgrows being a portfolio piece.
+`alembic check` runs in CI and in `verify.sh`, so a model change without a
+matching migration fails the build. That is the point: without it, the change
+deploys perfectly and then breaks against the real database.
 
-Whichever you pick, note it in the PR's "Database / migration impact"
-section so the deploy doesn't surprise you.
+Useful commands:
+
+```bash
+alembic current                 # which revision the database is on
+alembic history --verbose       # every migration, newest first
+alembic downgrade -1            # undo the last one
+alembic upgrade head --sql      # print the SQL instead of running it
+```
+
+That last one is worth knowing before letting a migration near production.
 
 ---
 

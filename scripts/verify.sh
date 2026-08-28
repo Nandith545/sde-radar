@@ -30,7 +30,8 @@ else
 fi
 
 STEP=0
-step()  { STEP=$((STEP + 1)); printf "\n%s[%d/5] %s%s\n" "$BOLD" "$STEP" "$1" "$RESET"; }
+TOTAL_STEPS=6
+step()  { STEP=$((STEP + 1)); printf "\n%s[%d/%d] %s%s\n" "$BOLD" "$STEP" "$TOTAL_STEPS" "$1" "$RESET"; }
 ok()    { printf "  %s✓%s %s\n" "$GREEN" "$RESET" "$1"; }
 warn()  { printf "  %s!%s %s\n" "$YELLOW" "$RESET" "$1"; }
 info()  { printf "  %s%s%s\n" "$DIM" "$1" "$RESET"; }
@@ -116,13 +117,36 @@ fi
 export DATABASE_URL="$DB_URL"
 export JWT_SECRET="local-verify-secret-not-used-anywhere-real"
 
-# ---- 2. backend ----------------------------------------------------------
-step "Backend: import check + dedup regression test"
+# ---- 2. backend quality gates -------------------------------------------
+step "Backend: lint, format, types, migrations"
 cd "$REPO_ROOT/backend"
-"$PY" -c "from app.main import app" >/dev/null
-ok "App imports cleanly"
-"$PY" test_dedup.py | sed 's/^/  /'
-ok "Dedup tests passed"
+
+BIN="$REPO_ROOT/backend/venv/bin"
+[ -x "$BIN/ruff" ] || BIN=""   # fall back to whatever is on PATH
+
+"${BIN:+$BIN/}ruff" check app/ tests/
+ok "Lint passed (ruff)"
+"${BIN:+$BIN/}ruff" format --check app/ tests/ >/dev/null
+ok "Formatting is clean"
+"${BIN:+$BIN/}mypy" >/dev/null
+ok "Type check passed (mypy)"
+
+"${BIN:+$BIN/}alembic" upgrade head >/dev/null 2>&1
+# `alembic check` fails when models.py has drifted from the migrations --
+# i.e. someone changed a column and forgot to generate a migration, which
+# deploys fine and then breaks against a real database.
+if "${BIN:+$BIN/}alembic" check >/dev/null 2>&1; then
+  ok "Migrations are in sync with the models"
+else
+  warn "Models have drifted from migrations — run: alembic revision --autogenerate -m '<what changed>'"
+  exit 1
+fi
+
+# ---- 3. tests ------------------------------------------------------------
+step "Backend: test suite"
+"${BIN:+$BIN/}pytest" -q --cov=app --cov-report=term-missing --cov-fail-under=75 \
+  | tail -n 8 | sed 's/^/  /'
+ok "Tests passed"
 
 # ---- 3. frontend ---------------------------------------------------------
 step "Frontend: lint, type-check and build"
@@ -158,6 +182,11 @@ case "$DB_KIND" in
     warn "Skipping reset on a database this script didn't create"
     ;;
 esac
+
+# The app no longer creates its own schema -- Alembic owns it -- so the
+# freshly reset database needs migrating before the server will start.
+"${BIN:+$BIN/}alembic" upgrade head >/dev/null
+ok "Migrations applied"
 
 if [ -x "$REPO_ROOT/backend/venv/bin/uvicorn" ]; then
   UVICORN="$REPO_ROOT/backend/venv/bin/uvicorn"

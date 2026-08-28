@@ -1,19 +1,42 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
-from ..security import hash_password, verify_password, create_access_token
+from ..rate_limit import SlidingWindowRateLimiter
+from ..security import create_access_token, dummy_verify, hash_password, verify_password
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+login_limiter = SlidingWindowRateLimiter(
+    max_attempts=settings.login_rate_limit_attempts,
+    window_seconds=settings.login_rate_limit_window_seconds,
+)
+
+
+def _client_ip(request: Request) -> str:
+    # Render terminates TLS at its proxy, so the real client address arrives in
+    # X-Forwarded-For. Take the first entry -- the rest are proxy hops.
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def _user_out(user: models.User) -> schemas.UserOut:
     return schemas.UserOut(
-        id=user.id, email=user.email, full_name=user.full_name,
-        target_city=user.target_city, target_titles=user.target_titles,
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        target_city=user.target_city,
+        target_titles=user.target_titles,
         has_resume=user.resume is not None,
     )
 
@@ -38,12 +61,34 @@ def register(payload: schemas.UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=schemas.Token)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Key on email *and* IP: email alone lets an attacker lock a known user out
+    # of their own account, IP alone is trivially sidestepped from a botnet.
+    rate_key = f"{form.username.lower()}|{_client_ip(request)}"
+    allowed, retry_after = login_limiter.check(rate_key)
+    if not allowed:
+        logger.warning("Login rate limit hit for %s", form.username)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again shortly.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = db.query(models.User).filter(models.User.email == form.username).first()
-    if not user or not verify_password(form.password, user.hashed_password):
+
+    if user is None:
+        # Hash anyway. Skipping it would return "no such user" measurably
+        # faster than "wrong password", which is enough to enumerate accounts.
+        dummy_verify(form.password)
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
-    token = create_access_token(subject=user.email)
-    return schemas.Token(access_token=token)
+
+    if not verify_password(form.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+
+    # Succeeded, so don't leave someone who merely mistyped their password
+    # throttled for the rest of the window.
+    login_limiter.reset(rate_key)
+    return schemas.Token(access_token=create_access_token(subject=user.email))
 
 
 @router.get("/me", response_model=schemas.UserOut)
@@ -52,8 +97,11 @@ def me(current_user: models.User = Depends(get_current_user)):
 
 
 @router.patch("/me", response_model=schemas.UserOut)
-def update_me(payload: schemas.UserUpdate, current_user: models.User = Depends(get_current_user),
-              db: Session = Depends(get_db)):
+def update_me(
+    payload: schemas.UserUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     if payload.full_name is not None:
         current_user.full_name = payload.full_name
     if payload.target_city is not None:

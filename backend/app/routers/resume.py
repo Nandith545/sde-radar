@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -13,32 +13,46 @@ ALLOWED_EXTENSIONS = (".pdf", ".txt", ".md")
 
 
 @router.post("", response_model=schemas.ResumeOut)
-async def upload_resume(file: UploadFile = File(...), current_user: models.User = Depends(get_current_user),
-                         db: Session = Depends(get_db)):
-    if not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
+async def upload_resume(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # `filename` is Optional on UploadFile -- a multipart part with no filename
+    # would otherwise raise AttributeError here and surface as a 500.
+    filename = file.filename or ""
+    if not filename.lower().endswith(ALLOWED_EXTENSIONS):
         raise HTTPException(status_code=400, detail="Please upload a .pdf, .txt, or .md file.")
+
+    # Check the declared size before reading, so an oversized upload is
+    # rejected without first buffering the whole thing into memory.
+    if file.size is not None and file.size > MAX_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="File is too large (5MB max).")
     content = await file.read()
     if len(content) > MAX_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="File is too large (5MB max).")
 
-    parsed = parse_resume(file.filename, content)
+    parsed = parse_resume(filename, content)
     if not parsed["skills"]:
         raise HTTPException(
             status_code=422,
             detail="Couldn't detect any recognizable technical skills in this file. "
-                   "Make sure it's a text-based resume (not a scanned image).",
+            "Make sure it's a text-based resume (not a scanned image).",
         )
 
     resume = db.query(models.Resume).filter(models.Resume.user_id == current_user.id).first()
     if resume:
-        resume.filename = file.filename
+        resume.filename = filename
         resume.raw_text = parsed["raw_text"]
         resume.skills = parsed["skills"]
         resume.years_experience = parsed["years_experience"]
     else:
         resume = models.Resume(
-            user_id=current_user.id, filename=file.filename, raw_text=parsed["raw_text"],
-            skills=parsed["skills"], years_experience=parsed["years_experience"],
+            user_id=current_user.id,
+            filename=filename,
+            raw_text=parsed["raw_text"],
+            skills=parsed["skills"],
+            years_experience=parsed["years_experience"],
         )
         db.add(resume)
     db.commit()

@@ -12,7 +12,8 @@ Interviewing → Offer / Rejected).
 
 Built as a full-stack showcase project:
 
-- **Backend:** Python, FastAPI, SQLAlchemy, PostgreSQL, JWT auth (passlib/bcrypt)
+- **Backend:** Python, FastAPI, SQLAlchemy 2.0 (typed `Mapped[]` models), PostgreSQL, Alembic migrations, JWT auth (passlib/bcrypt)
+- **Quality gates:** 128 tests at 87% coverage, ruff lint + format, mypy type checking, pre-commit hooks — all enforced in CI
 - **Frontend:** React + TypeScript (Vite), React Router
 - **Job data:** live listings from four independent job-board connectors — [Adzuna](https://developer.adzuna.com/), [Jooble](https://jooble.org/api/about), [Remotive](https://remotive.com/), and [Arbeitnow](https://www.arbeitnow.com/) — merged into one pool with cross-source deduplication, plus a bundled seed dataset so the app works immediately with zero external setup
 - **Matching engine:** a transparent, explainable scoring heuristic — skill overlap between your resume and each posting, target-title and target-city bonuses, and automatic flags for junior-level or part-time/contract postings — not a black box
@@ -93,8 +94,9 @@ falls back to a local SQLite file if `DATABASE_URL` is unset):
 ```bash
 cd backend
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + test/lint tooling
 cp .env.example .env        # edit if you're using Postgres locally
+alembic upgrade head        # create the schema (the app won't start without it)
 uvicorn app.main:app --reload
 ```
 
@@ -248,7 +250,7 @@ Everything under `.github/` — what runs, when, and why:
 
 | Workflow | Triggers | What it does |
 |----------|----------|--------------|
-| `ci.yml` | every push to `main`/`staging`, every PR | Backend dedup test against a real Postgres 16 service; frontend lint + type-check + production build; full Playwright end-to-end journey (register → upload resume → match → status change → reload → sign out) against the real stack |
+| `ci.yml` | every push to `main`/`staging`, every PR | Backend: ruff lint + format check, mypy, Alembic drift check, and 128 pytest tests against a real Postgres 16 service with a 75% coverage floor. Frontend: lint + type-check + production build. Then a full Playwright end-to-end journey (register → upload resume → match → status change → reload → sign out) against the real stack |
 | `security.yml` | pushes, PRs, weekly Monday scan | CodeQL static analysis for Python and TypeScript (results in the Security tab); `pip-audit` + `npm audit` for known CVEs in dependencies |
 | `deploy.yml` | after CI succeeds on `main` | Fires the Render deploy hook for production. Skipped automatically if CI failed. Staging deploys itself on push, ungated |
 | `dependabot.yml` | weekly / monthly | Opens grouped dependency-update PRs for pip, npm, GitHub Actions and Docker — each one runs through the same CI before you merge it |
@@ -268,20 +270,25 @@ A few deliberate choices worth knowing:
 
 ## Testing
 
-There's no full pytest suite (noted below as a good next step), but two
-scripts exist and are worth running after any change to matching or
-ingestion:
+One command runs everything:
 
-- **`backend/test_dedup.py`** — regression test for cross-source
-  deduplication. Feeds synthetic multi-board postings straight into the
-  ingestion pipeline and asserts duplicates collapse into one row with a
-  merged source list. Run with `./venv/bin/python test_dedup.py` (drops and
-  recreates every table on whatever `DATABASE_URL` is configured — point it
-  at a disposable dev database).
+```bash
+./scripts/verify.sh
+```
+
+Underneath it:
+
+- **`backend/tests/`** — 128 pytest tests at 87% coverage: auth and token
+  handling, multi-tenant isolation (one user must never see another's
+  pipeline), the scoring heuristic, skill extraction, cross-source dedup,
+  salary parsing, security behaviour, and every connector with HTTP stubbed
+  via respx. Runs on SQLite by default; set `TEST_DATABASE_URL` to use
+  Postgres as CI does.
 - **`frontend/tests/smoke.mjs`** — Playwright end-to-end test covering the
-  full user journey (register → upload resume → see matches → change
-  status → reload → status persists → sign out) against a running instance.
-  See the comment at the top of the file for exact usage.
+  full user journey against a running instance.
+- **`frontend/tests/screenshot.mjs`** — captures desktop and mobile
+  screenshots into `.verify-artifacts/`. The mobile one has already caught a
+  layout bug invisible on desktop.
 
 ---
 
@@ -291,11 +298,12 @@ This is a real, working v1 — not a mockup — but there's an honest list of
 what a "v2" would add, worth knowing (and worth mentioning in an interview
 if asked "what would you improve"):
 
-- **No database migrations** — tables are created with `Base.metadata.create_all()` at startup rather than Alembic migrations. Fine for a fresh deploy; a schema change later would need a manual migration path.
 - **No email verification / password reset flow.**
 - **Adzuna's free tier has a modest monthly call quota** — the 6-hour refresh schedule and search-term list in `job_ingestion.py` are tuned to stay well under it, but heavy multi-user traffic calling `/jobs/refresh` a lot would need rate-limiting.
 - **Jooble/Remotive/Arbeitnow connectors weren't live-verified** during development (no outbound network access in the build sandbox) — they're built against each provider's documented API shape with defensive per-item parsing, but are worth a log check after your first live deploy.
 - **Dedup is heuristic, not perfect** — exact-key + same-company fuzzy title matching catches the common cases (identical postings, minor wording differences) but won't catch a posting reworded enough to fall below the similarity threshold, and in rare cases could theoretically merge two genuinely different roles at the same company with near-identical titles and locations.
 - **Resume parsing is keyword-based, not LLM-based** — deliberate, so the app has no per-user inference cost or external AI dependency, but it will miss skills phrased in unusual ways.
 - **No "forgot password" / OAuth login** — email+password only, per the current scope.
-- **No automated pytest/CI suite** — the two scripts under [Testing](#testing) above cover the highest-risk logic (dedup, the full user journey) but aren't wired into a CI pipeline yet.
+- **Login throttling is per-process** — in-memory, so it protects a single instance. Scaling to multiple replicas needs Redis or an edge limiter.
+- **Job scoring is recomputed on every request** — every dashboard load scans the pool and rescores it. Invisible at seed scale, a real bottleneck at thousands of postings. Precomputed scores + pagination + caching is the next performance milestone.
+- **Connector fetches are sequential** — four boards run one after another rather than concurrently, so a refresh takes as long as the sum of them.
