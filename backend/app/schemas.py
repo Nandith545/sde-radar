@@ -11,7 +11,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(min_length=1, max_length=255)
-    target_city: str = Field(default="Seattle, WA", max_length=255)
+    target_cities: list[str] = Field(default_factory=list, max_length=20)
     target_titles: str = Field(default="Software Engineer", max_length=500)
 
 
@@ -33,7 +33,7 @@ class UserOut(BaseModel):
     id: int
     email: str
     full_name: str
-    target_city: str
+    target_cities: list[str]
     target_titles: str
     target_country: str
     work_mode: WorkMode
@@ -48,7 +48,7 @@ class UserOut(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
-    target_city: str | None = Field(default=None, max_length=255)
+    target_cities: list[str] | None = Field(default=None, max_length=20)
     target_titles: str | None = Field(default=None, max_length=500)
     target_country: str | None = Field(default=None, max_length=100)
     work_mode: WorkMode | None = None

@@ -102,7 +102,7 @@ def test_resumes_are_not_visible_across_accounts(client: TestClient, registered_
             "email": "other@example.com",
             "password": "supersecure123",
             "full_name": "Other",
-            "target_city": "Seattle, WA",
+            "target_cities": ["Seattle, WA"],
             "target_titles": "Software Engineer",
         },
     )

@@ -104,7 +104,7 @@ def registered_user(client: TestClient) -> dict:
         "email": "test@example.com",
         "password": "supersecure123",
         "full_name": "Test User",
-        "target_city": "Seattle, WA",
+        "target_cities": ["Seattle, WA"],
         "target_titles": "Software Engineer, Backend Engineer",
     }
     response = client.post("/api/auth/register", json=payload)

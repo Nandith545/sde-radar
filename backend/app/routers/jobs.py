@@ -149,7 +149,31 @@ def update_match(
     return _to_job_out(job, match.status, match.notes, result, preference_mismatch(job, current_user))
 
 
+# Each city is a separate round of calls to every configured board, so this
+# caps how much of a user's free-tier quota one button press can spend.
+# Cities beyond the cap are still filtered on -- they just rely on the
+# scheduled refresh and other users' pulls to populate the shared pool.
+MAX_REFRESH_CITIES = 3
+
+
 @router.post("/refresh")
 def refresh_jobs(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     titles = [t.strip() for t in (current_user.target_titles or "").split(",") if t.strip()] or None
-    return refresh_from_all_sources(db, where=current_user.target_city, search_terms=titles)
+    cities = (current_user.target_cities or [])[:MAX_REFRESH_CITIES]
+
+    if not cities:
+        return refresh_from_all_sources(db, search_terms=titles)
+
+    # Fetching only the first city would leave the others permanently empty:
+    # the user would filter for Austin roles that were never pulled and read
+    # the blank result as the filter being broken.
+    counts = {"added": 0, "merged_into_existing": 0, "same_source_updates": 0}
+    sources_used: list[str] = []
+    for city in cities:
+        result = refresh_from_all_sources(db, where=city, search_terms=titles)
+        for key in counts:
+            counts[key] += result.get(key, 0)
+        for name in result.get("sources_used", []):
+            if name not in sources_used:
+                sources_used.append(name)
+    return {**counts, "sources_used": sources_used}

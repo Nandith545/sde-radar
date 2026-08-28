@@ -3,7 +3,7 @@ import * as api from "../api";
 import { ApiError } from "../api";
 
 interface Props {
-  city: string;
+  cities: string[];
   titles: string;
   onUploaded: () => void;
 }
@@ -17,20 +17,17 @@ interface Props {
  * the user is about to receive matches and can see what they affect --
  * which also keeps sign-up down to name, email and password.
  */
-// The values the backend assigns when register doesn't send any. This card
-// only renders before a resume exists, and the register form no longer asks
-// for either field, so seeing these means the user has not chosen yet --
-// show an empty box and a placeholder rather than a pre-filled guess they
-// might not read. Leaving it blank costs only the location bonus; leaving a
-// wrong city costs them relevant results without saying so.
-const UNSET_CITY = "Seattle, WA";
+// Cities are a list now, so "unset" is simply an empty one -- no sentinel
+// value to compare against. Titles are still a string, and the backend fills
+// in a default the register form never asked for, so that one still needs a
+// sentinel to avoid showing a pre-filled guess the user might not read.
 const UNSET_TITLES = "Software Engineer";
 
-export default function ResumeUpload({ city, titles, onUploaded }: Props) {
+export default function ResumeUpload({ cities, titles, onUploaded }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [targetCity, setTargetCity] = useState(city === UNSET_CITY ? "" : city);
+  const [targetCity, setTargetCity] = useState(cities[0] ?? "");
   const [targetTitles, setTargetTitles] = useState(titles === UNSET_TITLES ? "" : titles);
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,8 +39,11 @@ export default function ResumeUpload({ city, titles, onUploaded }: Props) {
       // Save the targets first: scoring reads them when the upload triggers
       // a rematch, so writing them afterwards would score this first batch
       // against the old values.
-      if (targetCity !== city || targetTitles !== titles) {
-        await api.updateMe({ target_city: targetCity, target_titles: targetTitles });
+      if (targetCity !== (cities[0] ?? "") || targetTitles !== titles) {
+        await api.updateMe({
+          target_cities: targetCity.trim() ? [targetCity.trim()] : [],
+          target_titles: targetTitles,
+        });
       }
       await api.uploadResume(file);
       onUploaded();

@@ -12,7 +12,7 @@ def _user(**overrides) -> models.User:
         "email": "u@example.com",
         "full_name": "U",
         "hashed_password": "x",
-        "target_city": "Seattle, WA",
+        "target_cities": ["Seattle, WA"],
         "target_titles": "Software Engineer, Backend Engineer",
     }
     fields.update(overrides)
@@ -76,7 +76,7 @@ def test_matching_title_beats_non_matching_title(make_job) -> None:
 
 
 def test_target_city_boosts_the_score(make_job) -> None:
-    user = _user(target_city="Seattle, WA")
+    user = _user(target_cities=["Seattle, WA"])
     resume = _resume(["Java"])
 
     local = score_job(make_job(location="Seattle, WA", skills=["Java"]), user, resume)
@@ -132,7 +132,7 @@ def test_unreadable_work_mode_is_not_penalised(make_job) -> None:
 
 
 def test_job_in_the_wrong_country_is_flagged(make_job) -> None:
-    user = _user(target_country="United States", target_city="")
+    user = _user(target_country="United States", target_cities=[])
     resume = _resume(["Python"])
 
     abroad = score_job(make_job(location="Leipzig", skills=["Python"]), user, resume)
@@ -143,7 +143,7 @@ def test_job_in_the_wrong_country_is_flagged(make_job) -> None:
 def test_remote_job_is_never_flagged_for_its_country(make_job) -> None:
     """A remote role isn't really "in" a country, so it shouldn't be punished
     for being listed against one."""
-    user = _user(target_country="United States", target_city="")
+    user = _user(target_country="United States", target_cities=[])
     resume = _resume(["Python"])
 
     remote = score_job(make_job(location="Remote (Germany)", skills=["Python"]), user, resume)
@@ -152,8 +152,8 @@ def test_remote_job_is_never_flagged_for_its_country(make_job) -> None:
 
 
 def test_country_preference_ignores_unrecognised_locations(make_job) -> None:
-    user_with_pref = _user(target_country="United States", target_city="")
-    user_without = _user(target_city="")
+    user_with_pref = _user(target_country="United States", target_cities=[])
+    user_without = _user(target_cities=[])
     resume = _resume(["Python"])
     job = make_job(location="Atlantis", skills=["Python"])
 
@@ -251,62 +251,88 @@ def test_hourly_pay_is_annualised_before_comparison(make_job) -> None:
 
 
 def test_a_job_in_another_city_does_not_match(make_job) -> None:
-    user = _user(target_city="Seattle, WA")
+    user = _user(target_cities=["Seattle, WA"])
     assert preference_mismatch(make_job(location="Austin, TX"), user) is not None
 
 
 def test_a_job_in_the_target_city_matches(make_job) -> None:
-    user = _user(target_city="Seattle, WA")
+    user = _user(target_cities=["Seattle, WA"])
     assert preference_mismatch(make_job(location="Seattle, WA"), user) is None
 
 
 def test_remote_jobs_survive_a_city_filter(make_job) -> None:
     """A remote role is available from anywhere, so filtering it out because
     it isn't literally in your city removes the jobs most worth seeing."""
-    user = _user(target_city="Seattle, WA")
+    user = _user(target_cities=["Seattle, WA"])
     assert preference_mismatch(make_job(location="Remote (US)"), user) is None
 
 
 def test_wanting_onsite_still_excludes_remote(make_job) -> None:
     """The remote exemption must not override an explicit onsite preference."""
-    user = _user(target_city="Seattle, WA", work_mode="onsite")
+    user = _user(target_cities=["Seattle, WA"], work_mode="onsite")
     assert preference_mismatch(make_job(location="Remote (US)"), user) is not None
 
 
 def test_no_city_preference_filters_nothing_by_location(make_job) -> None:
-    user = _user(target_city="")
+    user = _user(target_cities=[])
     assert preference_mismatch(make_job(location="Austin, TX"), user) is None
 
 
 def test_a_job_in_the_wrong_country_does_not_match(make_job) -> None:
-    user = _user(target_city="", target_country="United States")
+    user = _user(target_cities=[], target_country="United States")
     assert preference_mismatch(make_job(location="Leipzig"), user) is not None
 
 
 def test_an_unrecognised_country_is_not_filtered_out(make_job) -> None:
     """Same rule as scoring: never act on a location we couldn't read."""
-    user = _user(target_city="", target_country="United States")
+    user = _user(target_cities=[], target_country="United States")
     assert preference_mismatch(make_job(location="Atlantis"), user) is None
 
 
 def test_pay_below_the_floor_does_not_match(make_job) -> None:
-    user = _user(target_city="", min_salary=180000)
+    user = _user(target_cities=[], min_salary=180000)
     assert preference_mismatch(make_job(comp_min=90000, comp_max=110000), user) is not None
 
 
 def test_an_unpublished_salary_range_is_not_filtered_out(make_job) -> None:
-    user = _user(target_city="", min_salary=180000)
+    user = _user(target_cities=[], min_salary=180000)
     assert preference_mismatch(make_job(comp_min=None, comp_max=None), user) is None
 
 
 def test_seniority_is_scored_but_never_filtered(make_job) -> None:
     """Titles are vague about level, and an adjacent rung is usually still
     worth seeing -- so seniority stays out of the hard filter."""
-    user = _user(target_city="", seniority="senior")
+    user = _user(target_cities=[], seniority="senior")
     assert preference_mismatch(make_job(title="Junior Software Engineer"), user) is None
 
 
 def test_the_mismatch_reason_says_what_was_wrong(make_job) -> None:
-    user = _user(target_city="Seattle, WA")
+    user = _user(target_cities=["Seattle, WA"])
     reason = preference_mismatch(make_job(location="Austin, TX"), user)
     assert reason and "Austin" in reason and "Seattle" in reason
+
+
+def test_any_of_several_cities_counts_as_a_match(make_job) -> None:
+    user = _user(target_cities=["Seattle, WA", "Bellevue, WA"])
+    assert preference_mismatch(make_job(location="Bellevue, WA"), user) is None
+    assert preference_mismatch(make_job(location="Seattle, WA"), user) is None
+    assert preference_mismatch(make_job(location="Austin, TX"), user) is not None
+
+
+def test_several_cities_still_boost_the_score(make_job) -> None:
+    user = _user(target_cities=["Seattle, WA", "Bellevue, WA"])
+    resume = _resume(["Python"])
+    here = score_job(make_job(location="Bellevue, WA", skills=["Python"]), user, resume)
+    away = score_job(make_job(location="Austin, TX", skills=["Python"]), user, resume)
+    assert here.score > away.score
+
+
+def test_the_mismatch_reason_lists_every_city(make_job) -> None:
+    user = _user(target_cities=["Seattle, WA", "Bellevue, WA"])
+    reason = preference_mismatch(make_job(location="Austin, TX"), user)
+    assert reason and "Seattle" in reason and "Bellevue" in reason
+
+
+def test_no_cities_means_anywhere(make_job) -> None:
+    user = _user(target_cities=[])
+    assert preference_mismatch(make_job(location="Anywhere At All"), user) is None

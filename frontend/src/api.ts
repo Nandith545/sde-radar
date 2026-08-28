@@ -72,7 +72,7 @@ export interface User {
   id: number;
   email: string;
   full_name: string;
-  target_city: string;
+  target_cities: string[];
   target_titles: string;
   target_country: string;
   work_mode: WorkMode;
@@ -124,7 +124,7 @@ export async function fetchMe(): Promise<User> {
 }
 
 export async function updateMe(
-  payload: Partial<Pick<User, "full_name" | "target_city" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary" | "address" | "phone">>,
+  payload: Partial<Pick<User, "full_name" | "target_cities" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary" | "address" | "phone">>,
 ): Promise<User> {
   return request("/auth/me", { method: "PATCH", body: JSON.stringify(payload) });
 }

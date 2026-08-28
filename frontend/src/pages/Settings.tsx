@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
 import AccountSecurity from "../components/AccountSecurity";
+import CityList from "../components/CityList";
 import { ApiError, type Seniority, type WorkMode } from "../api";
 
 const SENIORITY_LEVELS: { value: Seniority; label: string; blurb: string }[] = [
@@ -26,7 +27,7 @@ export default function Settings() {
 
   const [fullName, setFullName] = useState("");
   const [country, setCountry] = useState("");
-  const [city, setCity] = useState("");
+  const [cities, setCities] = useState<string[]>([]);
   const [titles, setTitles] = useState("");
   const [workMode, setWorkMode] = useState<WorkMode>("");
   const [seniority, setSeniority] = useState<Seniority>("");
@@ -47,7 +48,7 @@ export default function Settings() {
     if (!user) return;
     setFullName(user.full_name);
     setCountry(user.target_country);
-    setCity(user.target_city);
+    setCities(user.target_cities);
     setTitles(user.target_titles);
     setWorkMode(user.work_mode);
     setSeniority(user.seniority);
@@ -70,7 +71,7 @@ export default function Settings() {
     try {
       await api.updateMe({
         full_name: fullName,
-        target_city: city,
+        target_cities: cities,
         target_titles: titles,
         target_country: country,
         work_mode: workMode,
@@ -174,16 +175,7 @@ export default function Settings() {
               Postings elsewhere get flagged and scored down. Left blank, country is ignored.
             </div>
           </div>
-          <div className="field">
-            <label htmlFor="set-city">City</label>
-            <input
-              id="set-city"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="e.g. Seattle, WA"
-            />
-            <div className="field-hint">A match here is a bonus, not a filter.</div>
-          </div>
+          <CityList cities={cities} onChange={setCities} />
 
           <fieldset className="field mode-set">
             <legend>Work mode</legend>

@@ -14,7 +14,7 @@ CREDENTIALS = {
     "email": "rate@example.com",
     "password": "supersecure123",
     "full_name": "Rate Limited",
-    "target_city": "Seattle, WA",
+    "target_cities": ["Seattle, WA"],
     "target_titles": "Software Engineer",
 }
 
