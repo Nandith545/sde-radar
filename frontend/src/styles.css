@@ -240,3 +240,42 @@ button{cursor:pointer;}
 .city-add{display:flex; gap:8px;}
 .city-add input{flex:1;}
 .city-add .btn{white-space:nowrap;}
+
+/* --- Kanban board ------------------------------------------------------ */
+.view-tabs{display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--border);}
+.view-tab{background:none; border:0; border-bottom:2px solid transparent; padding:8px 14px;
+  font:inherit; font-size:13.5px; font-weight:600; color:var(--text-muted); cursor:pointer;}
+.view-tab[aria-selected="true"]{color:var(--accent); border-bottom-color:var(--accent);}
+
+/* Columns scroll sideways rather than squeezing: five legible columns beat
+   five unreadable ones on a narrow screen. */
+/* Breaks out of the 960px reading column. Five columns need ~1050px, so
+   inside the shell the last one is clipped by the scroll container -- and a
+   clipped column cannot be dropped onto at all, which makes the board's main
+   gesture silently fail on exactly one stage. */
+.kanban{display:grid; grid-auto-flow:column; grid-auto-columns:minmax(200px, 1fr);
+  gap:12px; overflow-x:auto; padding:0 20px 8px; align-items:start;
+  margin-left:calc(-50vw + 50%); margin-right:calc(-50vw + 50%);}
+.kanban-col{background:var(--surface-2); border:1px solid var(--border); border-radius:12px;
+  padding:12px; min-height:180px;}
+.kanban-col.drop-target{border-color:var(--accent); background:var(--accent-soft);}
+.kanban-col header{margin-bottom:10px;}
+.kanban-col h3{font-size:13px; margin:0; text-transform:uppercase; letter-spacing:0.04em;
+  color:var(--text-muted); display:flex; align-items:center; gap:6px;}
+.kanban-col header p{margin:2px 0 0; font-size:11.5px; color:var(--text-faint);}
+.kanban-count{background:var(--border); color:var(--text); border-radius:999px;
+  padding:0 7px; font-size:11px; font-weight:600;}
+.kanban-cards{display:flex; flex-direction:column; gap:8px;}
+.kanban-empty{font-size:12px; color:var(--text-faint); margin:0; padding:6px 0;}
+.kanban-card{background:var(--surface); border:1px solid var(--border); border-radius:9px;
+  padding:10px; cursor:grab;}
+.kanban-card.dragging{opacity:0.45; cursor:grabbing;}
+.kanban-card-title{font-size:13px; font-weight:600; line-height:1.3;}
+.kanban-card-company{font-size:12px; color:var(--text-muted); margin-top:1px;}
+.kanban-card-meta{display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin-top:7px; font-size:11px; color:var(--text-faint);}
+.kanban-score{background:var(--accent-soft); color:var(--accent-strong); border-radius:5px;
+  padding:1px 6px; font-weight:600;}
+.tag-rejected{background:var(--danger-soft); color:var(--danger); border-radius:5px; padding:1px 6px;}
+.kanban-move{width:100%; margin-top:8px; font-size:11.5px; padding:4px 6px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:6px; color:var(--text);}
