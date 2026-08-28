@@ -1,0 +1,33 @@
+{
+  // VS Code offers these when the project is first opened. Nothing here is
+  // required to build or run — the CLI tooling is the source of truth — but
+  // each one surfaces in the editor what CI would otherwise tell you minutes
+  // later.
+  "recommendations": [
+    // Python: language server, and the same ruff/mypy CI runs.
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "ms-python.mypy-type-checker",
+
+    // Frontend: the linter this project actually uses (oxlint, not ESLint).
+    "oxc.oxc-vscode",
+
+    // Verify the Dockerfile and poke at containers without leaving the editor.
+    "ms-azuretools.vscode-docker",
+
+    // Inline blame. Directly useful for the "why is this line here" workflow
+    // documented in CONTRIBUTING.md.
+    "eamodio.gitlens",
+
+    // Hit the API from a .http file instead of assembling curl commands.
+    "humao.rest-client"
+  ],
+  "unwantedRecommendations": [
+    // This project formats Python with ruff and doesn't use Prettier at all;
+    // having either installed and active would fight the configured setup.
+    "ms-python.black-formatter",
+    "esbenp.prettier-vscode"
+  ]
+}

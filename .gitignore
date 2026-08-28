@@ -18,7 +18,14 @@ backend/static/
 
 # OS / editor
 .DS_Store
-.vscode/
+.vscode/*
+# The four below encode project setup -- where the venv lives, which config
+# ruff uses, which directory pytest runs from -- so they're shared. Anything
+# else under .vscode/ is personal and stays ignored.
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 
 .verify-artifacts/
 

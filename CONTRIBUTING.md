@@ -34,6 +34,25 @@ pip install pre-commit && pre-commit install
 Then run the two dev servers — see the "Run it locally" section of the
 [README](README.md).
 
+### Editor
+
+VS Code config is committed in `.vscode/`. Open the repo root (not `backend/`
+or `frontend/` separately) and it will offer to install the recommended
+extensions — take them: ruff, mypy and oxlint then flag in the editor exactly
+what CI would fail you for minutes later.
+
+You get four debug configs in the Run panel: the API with breakpoints, pytest
+on the current file or the whole suite, and a live connector refresh. **Use
+"API: no reload"** when you want breakpoints to stick — `--reload` restarts
+the process and drops them.
+
+`Cmd/Ctrl+Shift+B` runs the full verify suite.
+
+One thing to check on first open: the Python interpreter, bottom-right, should
+read `venv`. If it doesn't, `Cmd/Ctrl+Shift+P` → "Python: Select Interpreter" →
+`./backend/venv/bin/python`. On Windows that path is `backend\venv\Scripts\python.exe`,
+and `.vscode/settings.json` needs the same one-line change.
+
 ---
 
 ## Making a change

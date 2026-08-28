@@ -1,0 +1,64 @@
+{
+  // Debug configurations. The point of these over `uvicorn` in a terminal is
+  // breakpoints: set one in a route handler or in dedup.py, hit the endpoint,
+  // and inspect the actual objects. Far faster than print-debugging an
+  // ingestion run.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API: dev server (debuggable)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal",
+      // Don't step into FastAPI/SQLAlchemy internals when you hit a
+      // breakpoint -- you almost never want to be in there.
+      "justMyCode": true
+    },
+    {
+      "name": "API: no reload (breakpoints survive)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Pytest: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v"],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Pytest: whole suite",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v"],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Connectors: live refresh (debuggable)",
+      "type": "debugpy",
+      "request": "launch",
+      "code": "from app.database import SessionLocal; from app.services.job_ingestion import refresh_from_all_sources; print(refresh_from_all_sources(SessionLocal(), where='Seattle, WA'))",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ],
+  "compounds": []
+}

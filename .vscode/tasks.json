@@ -1,0 +1,62 @@
+{
+  // Cmd/Ctrl+Shift+P -> "Run Task". "Verify everything" is bound as the
+  // default build task, so Cmd/Ctrl+Shift+B runs it directly.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Verify everything (what CI runs)",
+      "type": "shell",
+      "command": "./scripts/verify.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: dev server",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: tests with coverage",
+      "type": "shell",
+      "command": "./venv/bin/pytest --cov=app --cov-report=term-missing",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Migrations: apply",
+      "type": "shell",
+      "command": "./venv/bin/alembic upgrade head",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Migrations: generate from model changes",
+      "type": "shell",
+      "command": "./venv/bin/alembic revision --autogenerate -m \"${input:migrationMessage}\"",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker: build image",
+      "type": "shell",
+      "command": "docker build -t sde-radar .",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "migrationMessage",
+      "type": "promptString",
+      "description": "What does this migration change?",
+      "default": "describe the change"
+    }
+  ]
+}
