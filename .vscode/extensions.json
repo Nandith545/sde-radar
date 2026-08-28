@@ -1,33 +1,67 @@
 {
-  // VS Code offers these when the project is first opened. Nothing here is
-  // required to build or run — the CLI tooling is the source of truth — but
-  // each one surfaces in the editor what CI would otherwise tell you minutes
-  // later.
+  // VS Code offers these when the project is first opened.
+  //
+  // Nothing here is required to build, test or deploy — the CLI tooling in
+  // scripts/verify.sh is the source of truth, and CI runs that. What these
+  // buy you is time: each one surfaces in the editor, as you type, something
+  // CI would otherwise tell you about four minutes after you pushed.
   "recommendations": [
-    // Python: language server, and the same ruff/mypy CI runs.
+    // ---- Python: the core four ------------------------------------------
     "ms-python.python",
     "ms-python.vscode-pylance",
     "ms-python.debugpy",
+    // Ruff is both the linter and the formatter for this repo, and both are
+    // enforced in CI. With format-on-save configured in settings.json, the
+    // `ruff format --check` step should never be what fails your build.
     "charliermarsh.ruff",
+
+    // mypy also runs in CI and is currently clean. Inline errors are worth a
+    // lot here — mypy is what caught the UploadFile.filename crash.
     "ms-python.mypy-type-checker",
 
-    // Frontend: the linter this project actually uses (oxlint, not ESLint).
+    // ---- Frontend --------------------------------------------------------
+    // This project lints with oxlint, not ESLint. Installing the ESLint
+    // extension instead will silently do nothing.
     "oxc.oxc-vscode",
 
-    // Verify the Dockerfile and poke at containers without leaving the editor.
+    // ---- CI/CD and config ------------------------------------------------
+    // Four workflow files live in .github/workflows/. This validates their
+    // syntax against the real schema and shows run status without a browser
+    // tab — useful the moment you push and want to know if CI went green.
+    "github.vscode-github-actions",
+
+    // Schema-aware editing for render.yaml, dependabot.yml and
+    // .pre-commit-config.yaml. Catches the indentation and key-name mistakes
+    // that otherwise only surface when a deploy silently ignores a setting.
+    "redhat.vscode-yaml",
+
+    // The Dockerfile is the single least-tested thing in the repo. Syntax
+    // checking plus the ability to build and inspect containers in-editor.
     "ms-azuretools.vscode-docker",
 
-    // Inline blame. Directly useful for the "why is this line here" workflow
-    // documented in CONTRIBUTING.md.
+    // ---- Working with the code ------------------------------------------
+    // Inline blame. Directly supports the "why does this line exist" workflow
+    // in CONTRIBUTING.md — hover a line, see the commit and PR that made it.
     "eamodio.gitlens",
 
-    // Hit the API from a .http file instead of assembling curl commands.
-    "humao.rest-client"
+    // Hit the API from a .http file instead of assembling curl commands with
+    // bearer tokens by hand.
+    "humao.rest-client",
+
+    // Browse the Postgres schema Alembic creates and query it directly. More
+    // useful now that there are real migrations than it would have been
+    // when the schema came from create_all().
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg"
   ],
   "unwantedRecommendations": [
-    // This project formats Python with ruff and doesn't use Prettier at all;
-    // having either installed and active would fight the configured setup.
+    // This repo formats Python with ruff. Black would reformat differently
+    // and fight it on every save.
     "ms-python.black-formatter",
-    "esbenp.prettier-vscode"
+    // No Prettier config here; the frontend is formatted by hand and linted
+    // by oxlint. Prettier would reformat files CI doesn't expect to change.
+    "esbenp.prettier-vscode",
+    // ESLint is not this project's linter — see oxc.oxc-vscode above.
+    "dbaeumer.vscode-eslint"
   ]
 }

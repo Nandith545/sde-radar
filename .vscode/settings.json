@@ -54,6 +54,14 @@
     "**/.git/objects/**": true
   },
 
+  // ---- YAML schemas ------------------------------------------------------
+  // Gives the workflow and config files real validation and completion.
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml",
+    "https://json.schemastore.org/dependabot-2.0.json": ".github/dependabot.yml",
+    "https://json.schemastore.org/pre-commit-config.json": ".pre-commit-config.yaml"
+  },
+
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
   "editor.rulers": [110],
