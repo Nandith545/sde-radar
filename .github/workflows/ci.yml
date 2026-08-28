@@ -180,6 +180,15 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      # The Dockerfile's CMD runs migrations before starting uvicorn, so
+      # production always boots against a migrated schema. This job starts
+      # uvicorn directly, so it has to do the same thing explicitly --
+      # otherwise `_assert_schema_ready()` refuses to start against the
+      # empty e2e database and the server never comes up.
+      - name: Apply migrations
+        working-directory: backend
+        run: alembic upgrade head
+
       - name: Start the server
         working-directory: backend
         run: |
