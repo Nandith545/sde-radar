@@ -77,15 +77,15 @@ try {
   await page.fill("#fullName", "Friend Tester");
   await page.fill("#email", email);
   await page.fill("#password", "supersecure123");
-  await page.fill("#city", "Seattle, WA");
-  await page.fill("#titles", "Software Engineer, Backend Engineer");
   await page.click('button:has-text("Create account")');
 
   console.log("3. Should land on dashboard, resume banner visible");
   await page.waitForURL(BASE + "/");
   await page.waitForSelector("text=Upload your resume to get matched jobs");
 
-  console.log("4. Upload resume file");
+  console.log("4. Set search targets, then upload resume file");
+  await page.fill("#onboard-city", "Seattle, WA");
+  await page.fill("#onboard-titles", "Software Engineer, Backend Engineer");
   const fileInput = await page.$("#resume-file");
   await fileInput.setInputFiles(resumePath);
   await page.waitForSelector("text=Upload your resume to get matched jobs", { state: "detached", timeout: 15000 });

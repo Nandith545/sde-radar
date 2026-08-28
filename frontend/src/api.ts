@@ -66,7 +66,7 @@ export interface User {
 }
 
 export async function register(payload: {
-  email: string; password: string; full_name: string; target_city: string; target_titles: string;
+  email: string; password: string; full_name: string; target_city?: string; target_titles?: string;
 }): Promise<{ access_token: string }> {
   return request("/auth/register", { method: "POST", body: JSON.stringify(payload) });
 }

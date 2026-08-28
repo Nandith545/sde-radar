@@ -16,8 +16,6 @@ export default function Register() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [targetCity, setTargetCity] = useState("Seattle, WA");
-  const [targetTitles, setTargetTitles] = useState("Software Engineer, Backend Engineer, Full Stack Engineer");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [touchedEmail, setTouchedEmail] = useState(false);
@@ -35,7 +33,7 @@ export default function Register() {
     setError(null);
     setBusy(true);
     try {
-      await register({ email, password, full_name: fullName, target_city: targetCity, target_titles: targetTitles });
+      await register({ email, password, full_name: fullName });
       navigate("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
@@ -90,15 +88,6 @@ export default function Register() {
             onBlur={() => setTouchedPassword(true)}
           />
 
-          <div className="field">
-            <label htmlFor="city">Target city</label>
-            <input id="city" required value={targetCity} onChange={(e) => setTargetCity(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="titles">Target titles</label>
-            <input id="titles" required value={targetTitles} onChange={(e) => setTargetTitles(e.target.value)} />
-            <div className="field-hint">Comma-separated, e.g. "Software Engineer, Backend Engineer".</div>
-          </div>
           <button
             className="btn"
             type="submit"

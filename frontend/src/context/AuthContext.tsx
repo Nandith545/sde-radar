@@ -5,7 +5,7 @@ interface AuthContextValue {
   user: api.User | null;
   loading: boolean;
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
-  register: (payload: { email: string; password: string; full_name: string; target_city: string; target_titles: string }) => Promise<void>;
+  register: (payload: { email: string; password: string; full_name: string; target_city?: string; target_titles?: string }) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshUser();
   };
 
-  const doRegister = async (payload: { email: string; password: string; full_name: string; target_city: string; target_titles: string }) => {
+  const doRegister = async (payload: { email: string; password: string; full_name: string; target_city?: string; target_titles?: string }) => {
     const { access_token } = await api.register(payload);
     api.setToken(access_token);
     await refreshUser();
