@@ -110,16 +110,74 @@ without discussing the cost tradeoff.
 
 ## Not yet verified
 
-Be aware these were built in a sandbox without Docker or outbound network
-access, so they have never actually run:
+Most of this was built in a sandbox without Docker or outbound network
+access. Verified locally on 2026-08-27:
 
-- **The Dockerfile has never been built.** It's what Render deploys. Worth
-  running `docker build -t sde-radar .` early.
-- **The Jooble, Remotive and Arbeitnow connectors have never hit a live
-  API.** There are respx tests asserting they parse each provider's
-  *documented* response shape correctly, and that malformed data degrades
-  rather than crashing — but that is not the same as the live API still
-  returning that shape. Test with `POST /api/jobs/refresh` and watch the logs.
+- **The Dockerfile builds and runs.** `docker build -t sde-radar .` produces
+  a 638MB image; the container applies migrations, seeds, starts the
+  scheduler, and serves the React bundle and API against Postgres 16.
+- **Remotive and Arbeitnow hit their live APIs** and parse into `RawJob`
+  with title/company/location/external_id populated.
+
+- **Both environments are deployed and live** on Render, and the CI-gated
+  deploy works end to end: squash merge to `main` → CI green → the Deploy
+  workflow fires `RENDER_DEPLOY_HOOK` → production rebuilds.
+  - production: <https://sde-radar.onrender.com> (Postgres)
+  - staging: <https://sde-radar-staging.onrender.com> (SQLite, resets on
+    every deploy)
+- **Adzuna is configured in production** and reports active on
+  `/api/sources`.
+
+Still unverified:
+
+- **The Jooble connector has never hit a live API.** No `JOOBLE_API_KEY` is
+  set, so `is_configured()` returns False and it's skipped entirely. The
+  respx tests assert it parses Jooble's *documented* response shape, which
+  is not the same as the live API still returning it. When you add a key,
+  hit `POST /api/jobs/refresh` and watch the logs — a drifted shape yields
+  zero Jooble jobs rather than an error, because per-listing parsing is
+  wrapped in try/except.
+- **Adzuna is configured but its live response has never been eyeballed.**
+  Same failure mode: it degrades quietly rather than failing loudly.
+
+## Green CI is not the same as a working app
+
+The end-to-end smoke test registered a fresh account on every run and never
+logged in. Login was broken in production — the API client forced
+`Content-Type: application/json` onto the OAuth2 password form, so FastAPI
+returned 422 and the UI showed it as a failed sign-in — and all seven checks
+passed anyway, because no test ever exercised that path. Registering and
+logging in are different code paths (JSON vs. form-urlencoded); covering one
+says nothing about the other.
+
+The smoke test now signs out and signs back in. When adding coverage for a
+fix, check that the new test *fails* without the fix — otherwise it only
+documents the bug rather than catching it.
+
+## Local setup gotchas
+
+**Use Python 3.11 for the venv**, matching CI, the Dockerfile, ruff's
+`target-version` and mypy. On 3.14 `psycopg2-binary==2.9.10` has no wheel
+and falls back to a source build that fails without `pg_config`:
+
+```bash
+cd backend && uv venv --python 3.11 venv
+uv pip install --python ./venv/bin/python -r requirements.txt -r requirements-dev.txt
+```
+
+**Node must be ≥20.19** — `vite@8.2.2` refuses to run on older 20.x. If
+`node --version` reports 20.17, `/usr/local/bin/node` (from the official
+.pkg installer) is shadowing a newer Homebrew node; put
+`/usr/local/opt/node/bin` first on `PATH`.
+
+**A local Postgres is needed for `alembic check`** — it's the one gate that
+can't run against SQLite:
+
+```bash
+docker run -d --name sde-radar-pg -e POSTGRES_USER=sderadar \
+  -e POSTGRES_PASSWORD=<the one in backend/.env> \
+  -e POSTGRES_DB=sderadar -p 5432:5432 postgres:16
+```
 
 ## Workflow
 
