@@ -156,13 +156,33 @@ def sources_status():
 
 
 # ---- Serve the built React frontend (single-service deploy) ----------
+def static_root_allowlist(root: Path) -> dict[str, Path]:
+    """The flat files directly under `root`, keyed by name.
+
+    Hashed assets are served by the `/assets` StaticFiles mount; this covers
+    only the handful of files that sit at the bundle root (index.html, and any
+    favicon/robots.txt Vite emits from public/). Enumerating them once at
+    startup means the catch-all never builds a filesystem path out of the URL
+    at all -- it does a dict lookup on the requested name. That is what closed
+    the traversal that read backend/.env: there is no `root / url_path` for
+    "%2e%2e/%2e%2e/.env" to resolve through, so an allowlist miss (a real
+    client route, or an attack) simply falls through to index.html.
+    """
+    return {entry.name: entry for entry in root.iterdir() if entry.is_file()}
+
+
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "static"
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
+    _ROOT_FILES = static_root_allowlist(FRONTEND_DIST)
+    _INDEX = FRONTEND_DIST / "index.html"
+
     @app.get("/{full_path:path}")
     def spa_catch_all(full_path: str):
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(FRONTEND_DIST / "index.html")
+        # Pure dict lookup on the requested name -- no path is built from the
+        # URL, so there is nothing for a "../" payload to traverse through. A
+        # miss is a real client route (e.g. /settings) or an attack; both get
+        # the SPA entrypoint.
+        served = _ROOT_FILES.get(full_path)
+        return FileResponse(served if served is not None else _INDEX)
