@@ -28,7 +28,7 @@ def utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-class StatusEnum(str, enum.Enum):
+class StatusEnum(enum.StrEnum):
     new = "new"
     saved = "saved"
     applied = "applied"
