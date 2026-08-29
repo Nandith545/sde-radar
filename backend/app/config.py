@@ -64,7 +64,7 @@ def validate_for_production() -> list[str]:
         )
     elif len(settings.jwt_secret) < MIN_SECRET_LENGTH:
         problems.append(
-            f"JWT_SECRET is only {len(settings.jwt_secret)} characters; " f"use at least {MIN_SECRET_LENGTH}."
+            f"JWT_SECRET is only {len(settings.jwt_secret)} characters; use at least {MIN_SECRET_LENGTH}."
         )
 
     if settings.database_url.startswith("sqlite"):
