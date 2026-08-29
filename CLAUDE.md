@@ -146,6 +146,11 @@ access. Verified locally on 2026-08-27:
 - **Adzuna is configured in production** and reports active on
   `/api/sources`.
 
+- **Greenhouse and Lever were verified live** (Stripe returns 127 jobs,
+  Gopuff's Lever board parses cleanly), which the original four connectors
+  never were at build time. Both are per-company: set `GREENHOUSE_COMPANIES`
+  / `LEVER_COMPANIES` to comma-separated slugs. Keyless, so no quota.
+
 Still unverified:
 
 - **The Jooble connector has never hit a live API.** No `JOOBLE_API_KEY` is

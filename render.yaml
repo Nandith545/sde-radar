@@ -51,6 +51,12 @@ services:
         sync: false
       - key: JOOBLE_API_KEY
         sync: false
+      # Per-company boards. Comma-separated slugs, e.g. "stripe,gitlab".
+      # Keyless, so these are the cheapest sources to add -- no quota.
+      - key: GREENHOUSE_COMPANIES
+        sync: false
+      - key: LEVER_COMPANIES
+        sync: false
 
   # ---- Staging ----------------------------------------------------------
   - type: web

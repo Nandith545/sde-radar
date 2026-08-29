@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     adzuna_app_key: str = os.getenv("ADZUNA_APP_KEY", "")
     jooble_api_key: str = os.getenv("JOOBLE_API_KEY", "")
 
+    # Greenhouse and Lever are per-company, not keyword-searchable: each hosts
+    # one employer's board under a slug (e.g. "stripe"). Comma-separated, and
+    # the connector is simply inactive when its list is empty -- the same
+    # is_configured() contract the keyed connectors use.
+    greenhouse_companies: str = os.getenv("GREENHOUSE_COMPANIES", "")
+    lever_companies: str = os.getenv("LEVER_COMPANIES", "")
+
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
     # Login throttling: attempts allowed per window, per email+IP.
