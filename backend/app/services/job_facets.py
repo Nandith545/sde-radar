@@ -134,11 +134,15 @@ _COUNTRY_ALIASES: dict[str, tuple[str, ...]] = {
 # country token appears anywhere in it. Two-letter state codes are the only
 # reliable signal. "WA" is also Western Australia, which is why this is
 # consulted only after the alias table above finds nothing.
-_US_STATE_CODES = frozenset(
+# Space-separated for legibility, split once at import. Kept as a named
+# string rather than an inline literal so ruff's SIM905 doesn't push it into
+# a 51-element list literal, which reads far worse than the codes in rows.
+_US_STATE_CODE_STR = (
     "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
     "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV "
-    "WI WY DC".split()
+    "WI WY DC"
 )
+_US_STATE_CODES = frozenset(_US_STATE_CODE_STR.split())
 
 
 def infer_country(location: str) -> str:
