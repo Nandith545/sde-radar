@@ -68,8 +68,10 @@ def test_you_cannot_download_someone_elses_document(client: TestClient, register
     ).json()
     other_headers = {"Authorization": f"Bearer {other['access_token']}"}
 
-    assert client.get(f"/api/documents/{mine['id']}/download", headers=other_headers).status_code == 404
-    assert client.delete(f"/api/documents/{mine['id']}", headers=other_headers).status_code == 404
+    download = client.get(f"/api/documents/{mine['id']}/download", headers=other_headers)
+    delete = client.delete(f"/api/documents/{mine['id']}", headers=other_headers)
+    assert download.status_code == 404
+    assert delete.status_code == 404
 
 
 def test_an_unknown_kind_is_rejected(client: TestClient, registered_user: dict) -> None:
@@ -192,7 +194,8 @@ def test_deleting_an_attached_document_is_refused(
 def test_an_unattached_document_can_be_deleted(client: TestClient, registered_user: dict) -> None:
     doc = _upload(client, registered_user["headers"])
 
-    assert client.delete(f"/api/documents/{doc['id']}", headers=registered_user["headers"]).status_code == 204
+    deleted = client.delete(f"/api/documents/{doc['id']}", headers=registered_user["headers"])
+    assert deleted.status_code == 204
     assert client.get("/api/documents", headers=registered_user["headers"]).json() == []
 
 
