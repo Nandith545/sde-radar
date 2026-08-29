@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from app.services.sources import active_sources, adzuna, arbeitnow, jooble, remotive
+from app.services.sources import active_sources, adzuna, arbeitnow, greenhouse, jooble, lever, remotive
 from app.services.sources.base import RawJob
 
 # ---- Registry -----------------------------------------------------------
@@ -308,3 +308,124 @@ def test_jooble_makes_no_request_without_an_api_key(monkeypatch) -> None:
     # No respx mock installed: any real request would error, so returning []
     # proves it short-circuits before touching the network.
     assert jooble.fetch(["Backend Engineer"], "Seattle, WA") == []
+
+
+# ---- Greenhouse & Lever (per-company boards) ---------------------------
+
+_GREENHOUSE_PAYLOAD = {
+    "name": "Stripe",
+    "jobs": [
+        {
+            "id": 12345,
+            "title": "Senior Software Engineer",
+            "updated_at": "2026-08-20T10:00:00-04:00",
+            "location": {"name": "Remote - US"},
+            "absolute_url": "https://boards.greenhouse.io/stripe/jobs/12345",
+            "content": "&lt;p&gt;Build payments infra in &lt;strong&gt;Python&lt;/strong&gt;.&lt;/p&gt;",
+        },
+        {
+            "id": 12346,
+            "title": "Product Designer",
+            "updated_at": "2026-08-19T10:00:00-04:00",
+            "location": {"name": "Seattle, WA"},
+            "absolute_url": "https://boards.greenhouse.io/stripe/jobs/12346",
+            "content": "Design things.",
+        },
+    ],
+}
+
+_LEVER_PAYLOAD = [
+    {
+        "id": "abc-123",
+        "text": "Backend Engineer",
+        "categories": {"location": "Remote", "commitment": "Full-time"},
+        "descriptionPlain": "Write Go services.",
+        "hostedUrl": "https://jobs.lever.co/acme/abc-123",
+        "createdAt": 1755676800000,
+    },
+    {
+        "id": "def-456",
+        "text": "Sales Lead",
+        "categories": {"location": "New York"},
+        "descriptionPlain": "Sell things.",
+        "hostedUrl": "https://jobs.lever.co/acme/def-456",
+        "createdAt": 1755676800000,
+    },
+]
+
+
+def test_greenhouse_is_inactive_without_configured_companies(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.greenhouse_companies", "")
+    assert greenhouse.is_configured() is False
+    monkeypatch.setattr("app.config.settings.greenhouse_companies", "stripe, gitlab")
+    assert greenhouse.is_configured() is True
+
+
+def test_lever_is_inactive_without_configured_companies(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.lever_companies", "")
+    assert lever.is_configured() is False
+    monkeypatch.setattr("app.config.settings.lever_companies", "acme")
+    assert lever.is_configured() is True
+
+
+@respx.mock
+def test_greenhouse_parses_and_filters(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.greenhouse_companies", "stripe")
+    respx.get(url__startswith="https://boards-api.greenhouse.io/v1/boards/stripe/jobs").mock(
+        return_value=httpx.Response(200, json=_GREENHOUSE_PAYLOAD)
+    )
+
+    jobs = greenhouse.fetch(["engineer"], "remote")
+
+    # Only the engineering role matches the keyword; the designer is dropped.
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.title == "Senior Software Engineer"
+    assert job.company == "Stripe"
+    assert job.external_id == "12345"
+    assert job.posted == "2026-08-20"
+    # HTML-escaped HTML is unescaped and stripped to plain text.
+    assert "Python" in job.description and "<" not in job.description
+
+
+@respx.mock
+def test_greenhouse_one_bad_company_does_not_sink_the_others(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.greenhouse_companies", "broken, stripe")
+    respx.get(url__startswith="https://boards-api.greenhouse.io/v1/boards/broken/jobs").mock(
+        return_value=httpx.Response(404)
+    )
+    respx.get(url__startswith="https://boards-api.greenhouse.io/v1/boards/stripe/jobs").mock(
+        return_value=httpx.Response(200, json=_GREENHOUSE_PAYLOAD)
+    )
+
+    jobs = greenhouse.fetch([], "")
+    assert {j.external_id for j in jobs} == {"12345", "12346"}
+
+
+@respx.mock
+def test_lever_parses_and_converts_ms_timestamps(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.lever_companies", "acme")
+    respx.get(url__startswith="https://api.lever.co/v0/postings/acme").mock(
+        return_value=httpx.Response(200, json=_LEVER_PAYLOAD)
+    )
+
+    jobs = lever.fetch(["engineer"], "")
+
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.title == "Backend Engineer"
+    assert job.company == "Acme"
+    assert job.external_id == "abc-123"
+    # 1755676800000 ms -> 2025-08-20
+    assert job.posted == "2025-08-20"
+    assert job.job_type == "Full-time"
+
+
+@respx.mock
+def test_lever_tolerates_a_non_list_payload(monkeypatch) -> None:
+    """The API returns a bare list; anything else must degrade, not crash."""
+    monkeypatch.setattr("app.config.settings.lever_companies", "acme")
+    respx.get(url__startswith="https://api.lever.co/v0/postings/acme").mock(
+        return_value=httpx.Response(200, json={"error": "not found"})
+    )
+    assert lever.fetch([], "") == []

@@ -1,8 +1,8 @@
-from . import adzuna, arbeitnow, jooble, remotive
+from . import adzuna, arbeitnow, greenhouse, jooble, lever, remotive
 
 # Order matters only for logging/readability; ingestion treats all sources
 # equally and dedups across whichever ones are configured.
-REGISTRY = [adzuna, jooble, remotive, arbeitnow]
+REGISTRY = [adzuna, jooble, remotive, arbeitnow, greenhouse, lever]
 
 
 def active_sources() -> list[str]:
