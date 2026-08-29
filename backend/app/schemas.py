@@ -82,6 +82,21 @@ class ResumeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ---- Documents ---------------------------------------------------------
+DocumentKind = Literal["resume", "cover_letter"]
+
+
+class DocumentOut(BaseModel):
+    id: int
+    kind: DocumentKind
+    label: str
+    filename: str
+    size_bytes: int
+    created_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ---- Jobs -------------------------------------------------------------
 class JobOut(BaseModel):
     id: int
@@ -101,6 +116,8 @@ class JobOut(BaseModel):
     flag: str | None
     matches_preferences: bool
     mismatch_reason: str | None
+    resume_document_id: int | None
+    cover_letter_document_id: int | None
     status: StatusEnum
     notes: str
 
@@ -108,6 +125,10 @@ class JobOut(BaseModel):
 
 
 class MatchUpdate(BaseModel):
+    # 0 clears the link; None leaves it alone. Without the distinction there
+    # is no way to say "detach" as opposed to "don't touch".
+    resume_document_id: int | None = None
+    cover_letter_document_id: int | None = None
     status: StatusEnum | None = None
     notes: str | None = None
 

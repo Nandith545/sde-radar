@@ -8,6 +8,8 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -103,6 +105,44 @@ class Resume(Base):
     user: Mapped["User"] = relationship(back_populates="resume")
 
 
+class UserDocument(Base):
+    """A resume or cover letter exactly as it was uploaded.
+
+    The bytes are kept here, in the database, rather than on disk: Render's
+    filesystem is ephemeral and render.yaml declares no persistent disk, so a
+    file written to disk disappears on the next deploy -- which for "show me
+    the resume I actually sent" is worse than not offering the feature. At a
+    few hundred KB per document this is comfortable inside the free tier's
+    1GB; object storage is the answer if that ever stops being true.
+
+    Rows are immutable. Uploading a revision creates another row, because the
+    point is to still have the version that was attached to an application
+    six weeks ago.
+    """
+
+    __tablename__ = "user_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    kind: Mapped[str] = mapped_column(String(20), default="resume")
+    """"resume" | "cover_letter". A plain string rather than an Enum, matching
+    work_mode and seniority -- Pydantic Literals guard the API boundary and a
+    third str-Enum would trip the same UP042 lint."""
+
+    label: Mapped[str] = mapped_column(String(120), default="")
+    """What the user calls this version, e.g. "Backend-heavy, Oct"."""
+
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    raw_text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped["User"] = relationship()
+
+
 class JobListing(Base):
     __tablename__ = "job_listings"
     __table_args__ = (
@@ -148,9 +188,22 @@ class UserJobMatch(Base):
     job_id: Mapped[int] = mapped_column(ForeignKey("job_listings.id"), index=True)
     status: Mapped[StatusEnum] = mapped_column(Enum(StatusEnum), default=StatusEnum.new)
     notes: Mapped[str] = mapped_column(Text, default="")
+
+    resume_document_id: Mapped[int | None] = mapped_column(ForeignKey("user_documents.id"), nullable=True)
+    """Which resume version was actually sent for this application."""
+
+    cover_letter_document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user_documents.id"), nullable=True
+    )
+    """And which cover letter, if any."""
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
     user: Mapped["User"] = relationship(back_populates="matches")
     job: Mapped["JobListing"] = relationship()
+    # Two FKs to the same table, so the join condition has to be spelled out.
+    resume_document: Mapped["UserDocument | None"] = relationship(foreign_keys=[resume_document_id])
+    cover_letter_document: Mapped["UserDocument | None"] = relationship(
+        foreign_keys=[cover_letter_document_id]
+    )
