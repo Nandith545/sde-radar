@@ -73,6 +73,9 @@ export interface User {
   email: string;
   full_name: string;
   target_cities: string[];
+  /** Subdivision codes inside target_country. Empty means every state,
+   * which is the default -- it is not the same as "no states". */
+  target_states: string[];
   target_titles: string;
   target_country: string;
   work_mode: WorkMode;
@@ -124,7 +127,7 @@ export async function fetchMe(): Promise<User> {
 }
 
 export async function updateMe(
-  payload: Partial<Pick<User, "full_name" | "target_cities" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary" | "address" | "phone">>,
+  payload: Partial<Pick<User, "full_name" | "target_cities" | "target_states" | "target_titles" | "target_country" | "work_mode" | "seniority" | "min_salary" | "address" | "phone">>,
 ): Promise<User> {
   return request("/auth/me", { method: "PATCH", body: JSON.stringify(payload) });
 }
@@ -282,4 +285,58 @@ export async function updateMatch(
 
 export async function refreshJobs(): Promise<{ added_or_updated: number }> {
   return request("/jobs/refresh", { method: "POST" });
+}
+
+// ---- Regions ----
+export interface RegionCity {
+  name: string;
+  job_count: number;
+}
+
+export interface Subdivision {
+  code: string;
+  label: string;
+  job_count: number;
+  cities: RegionCity[];
+}
+
+export interface RegionCountry {
+  slug: string;
+  label: string;
+  /** What this country calls the tier -- State, Province, Land, Nation,
+   * County. Used as the picker's own label, because "State" over a list of
+   * Canadian provinces reads as a bug to anyone who lives there. */
+  subdivision_label: string;
+  supports_postal_lookup: boolean;
+}
+
+export interface RegionCountryDetail extends RegionCountry {
+  subdivisions: Subdivision[];
+}
+
+export interface PostalLookup {
+  code: string;
+  label: string;
+  cities: string[];
+}
+
+export async function listCountries(): Promise<RegionCountry[]> {
+  return request("/regions");
+}
+
+export async function getCountry(slug: string): Promise<RegionCountryDetail> {
+  return request(`/regions/${encodeURIComponent(slug)}`);
+}
+
+/** Resolves a postal code to a subdivision, for the profile address only.
+ * Returns null when it can't be placed -- an unsupported country, a
+ * malformed code, or a range two subdivisions share. The caller must leave
+ * the picker untouched in all three cases rather than guess. */
+export async function lookupPostal(country: string, postalCode: string): Promise<PostalLookup | null> {
+  try {
+    return await request(`/regions/${encodeURIComponent(country)}/postal/${encodeURIComponent(postalCode)}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
 }

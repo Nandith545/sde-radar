@@ -4,7 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
 import AccountSecurity from "../components/AccountSecurity";
 import DocumentLibrary from "../components/DocumentLibrary";
-import CityList from "../components/CityList";
+import RegionPicker from "../components/RegionPicker";
+import PostalAutofill from "../components/PostalAutofill";
 import { ApiError, type Seniority, type WorkMode } from "../api";
 
 const SENIORITY_LEVELS: { value: Seniority; label: string; blurb: string }[] = [
@@ -29,6 +30,7 @@ export default function Settings() {
   const [fullName, setFullName] = useState("");
   const [country, setCountry] = useState("");
   const [cities, setCities] = useState<string[]>([]);
+  const [states, setStates] = useState<string[]>([]);
   const [titles, setTitles] = useState("");
   const [workMode, setWorkMode] = useState<WorkMode>("");
   const [seniority, setSeniority] = useState<Seniority>("");
@@ -50,6 +52,7 @@ export default function Settings() {
     setFullName(user.full_name);
     setCountry(user.target_country);
     setCities(user.target_cities);
+    setStates(user.target_states);
     setTitles(user.target_titles);
     setWorkMode(user.work_mode);
     setSeniority(user.seniority);
@@ -73,6 +76,7 @@ export default function Settings() {
       await api.updateMe({
         full_name: fullName,
         target_cities: cities,
+        target_states: states,
         target_titles: titles,
         target_country: country,
         work_mode: workMode,
@@ -146,6 +150,12 @@ export default function Settings() {
               placeholder="+1 555 0100"
             />
           </div>
+          <PostalAutofill
+            preferredCountry={country}
+            onAppend={(line) =>
+              setAddress((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n${line}` : line))
+            }
+          />
           <div className="field">
             <label htmlFor="set-address">Address</label>
             <textarea
@@ -164,19 +174,16 @@ export default function Settings() {
 
         <section className="panel">
           <h2>Where you want to work</h2>
-          <div className="field">
-            <label htmlFor="set-country">Country</label>
-            <input
-              id="set-country"
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="e.g. United States"
-            />
-            <div className="field-hint">
-              Postings elsewhere get flagged and scored down. Left blank, country is ignored.
-            </div>
-          </div>
-          <CityList cities={cities} onChange={setCities} />
+          <RegionPicker
+            country={country}
+            states={states}
+            cities={cities}
+            onChange={(next) => {
+              setCountry(next.country);
+              setStates(next.states);
+              setCities(next.cities);
+            }}
+          />
 
           <fieldset className="field mode-set">
             <legend>Work mode</legend>

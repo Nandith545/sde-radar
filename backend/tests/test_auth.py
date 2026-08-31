@@ -253,3 +253,96 @@ def test_target_cities_are_trimmed_and_deduplicated(client: TestClient, register
 def test_clearing_target_cities_means_anywhere(client: TestClient, registered_user: dict) -> None:
     response = client.patch("/api/auth/me", json={"target_cities": []}, headers=registered_user["headers"])
     assert response.json()["target_cities"] == []
+
+
+# ---- State / province preference ---------------------------------------
+
+
+def test_states_can_be_selected(client: TestClient, registered_user: dict) -> None:
+    body = client.patch(
+        "/api/auth/me",
+        json={"target_country": "United States", "target_states": ["WA", "OR"]},
+        headers=registered_user["headers"],
+    ).json()
+    assert body["target_states"] == ["WA", "OR"]
+
+
+def test_states_default_to_empty_meaning_all(client: TestClient, registered_user: dict) -> None:
+    body = client.get("/api/auth/me", headers=registered_user["headers"]).json()
+    assert body["target_states"] == []
+
+
+def test_state_codes_are_normalised_and_deduplicated(client: TestClient, registered_user: dict) -> None:
+    body = client.patch(
+        "/api/auth/me",
+        json={"target_country": "United States", "target_states": ["wa", " or ", "WA"]},
+        headers=registered_user["headers"],
+    ).json()
+    assert body["target_states"] == ["WA", "OR"]
+
+
+def test_a_state_that_is_not_in_the_country_is_rejected(client: TestClient, registered_user: dict) -> None:
+    """Dropping it silently would *widen* the search -- an empty list means
+    all states -- so a typo would quietly return more jobs than asked for."""
+    response = client.patch(
+        "/api/auth/me",
+        json={"target_country": "United States", "target_states": ["NSW"]},
+        headers=registered_user["headers"],
+    )
+    assert response.status_code == 422
+    assert "United States" in response.json()["detail"]
+
+
+def test_states_without_a_country_are_rejected(client: TestClient, registered_user: dict) -> None:
+    response = client.patch(
+        "/api/auth/me",
+        json={"target_states": ["WA"]},
+        headers=registered_user["headers"],
+    )
+    assert response.status_code == 422
+
+
+def test_changing_country_clears_the_state_selection(client: TestClient, registered_user: dict) -> None:
+    """ "WA" is Washington in the US and Western Australia in Australia.
+    Carrying it across would silently change what the user asked for."""
+    headers = registered_user["headers"]
+    client.patch(
+        "/api/auth/me",
+        json={"target_country": "United States", "target_states": ["WA"]},
+        headers=headers,
+    )
+
+    body = client.patch("/api/auth/me", json={"target_country": "Australia"}, headers=headers).json()
+    assert body["target_states"] == []
+
+
+def test_setting_the_same_country_again_keeps_the_selection(
+    client: TestClient, registered_user: dict
+) -> None:
+    """Saving the settings form resends every field; that must not wipe the
+    states just because the country was included unchanged."""
+    headers = registered_user["headers"]
+    client.patch(
+        "/api/auth/me",
+        json={"target_country": "United States", "target_states": ["WA"]},
+        headers=headers,
+    )
+
+    body = client.patch(
+        "/api/auth/me",
+        json={"target_country": "United States", "target_titles": "Backend Engineer"},
+        headers=headers,
+    ).json()
+    assert body["target_states"] == ["WA"]
+
+
+def test_changing_country_and_states_together_keeps_the_new_states(
+    client: TestClient, registered_user: dict
+) -> None:
+    """Switching country in the UI picks new states in the same save."""
+    body = client.patch(
+        "/api/auth/me",
+        json={"target_country": "Australia", "target_states": ["NSW", "VIC"]},
+        headers=registered_user["headers"],
+    ).json()
+    assert body["target_states"] == ["NSW", "VIC"]

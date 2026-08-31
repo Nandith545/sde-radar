@@ -336,3 +336,81 @@ def test_the_mismatch_reason_lists_every_city(make_job) -> None:
 def test_no_cities_means_anywhere(make_job) -> None:
     user = _user(target_cities=[])
     assert preference_mismatch(make_job(location="Anywhere At All"), user) is None
+
+
+# ---- State / province preference ---------------------------------------
+
+
+def test_a_job_outside_the_selected_states_is_flagged(make_job) -> None:
+    user = _user(target_cities=[], target_country="United States", target_states=["WA"])
+    resume = _resume(["Java", "Python"])
+
+    result = score_job(make_job(location="Austin, TX"), user, resume)
+    assert "Texas" in (result.flag or "")
+
+
+def test_a_job_inside_the_selected_states_is_not_flagged(make_job) -> None:
+    user = _user(target_cities=[], target_country="United States", target_states=["WA", "OR"])
+    resume = _resume(["Java", "Python"])
+
+    assert score_job(make_job(location="Seattle, WA"), user, resume).flag is None
+
+
+def test_selecting_states_ranks_them_above_the_rest(make_job) -> None:
+    user = _user(target_cities=[], target_country="United States", target_states=["WA"])
+    resume = _resume(["Java", "Python"])
+
+    inside = score_job(make_job(location="Seattle, WA"), user, resume)
+    outside = score_job(make_job(location="Austin, TX"), user, resume)
+    assert inside.score > outside.score
+
+
+def test_no_states_selected_means_every_state(make_job) -> None:
+    """An empty list is "all states", not "none" -- it is the default every
+    existing user was backfilled with."""
+    user = _user(target_cities=[], target_country="United States", target_states=[])
+    resume = _resume(["Java", "Python"])
+
+    assert score_job(make_job(location="Austin, TX"), user, resume).flag is None
+
+
+def test_a_posting_whose_state_cannot_be_read_is_left_alone(make_job) -> None:
+    """The same asymmetry work mode and country use: a job hidden for being
+    unreadable is worse than one shown without a bonus."""
+    user = _user(target_cities=[], target_country="United States", target_states=["WA"])
+    resume = _resume(["Java", "Python"])
+
+    for location in ("Remote (USA)", "Unspecified", "Portland"):
+        result = score_job(make_job(location=location), user, resume)
+        assert result.flag is None, location
+
+
+def test_a_remote_job_is_never_wrong_for_its_state(make_job) -> None:
+    user = _user(target_cities=[], target_country="United States", target_states=["WA"])
+    resume = _resume(["Java", "Python"])
+
+    result = score_job(make_job(location="Austin, TX (Remote)"), user, resume)
+    assert result.flag is None
+
+
+def test_states_do_nothing_without_a_country(make_job) -> None:
+    """Codes are only meaningful inside a country; "WA" alone could be
+    Washington or Western Australia."""
+    user = _user(target_cities=[], target_country="", target_states=["WA"])
+    resume = _resume(["Java", "Python"])
+
+    assert score_job(make_job(location="Austin, TX"), user, resume).flag is None
+
+
+def test_the_mismatch_reason_names_both_states(make_job) -> None:
+    user = _user(target_cities=[], target_country="United States", target_states=["WA"])
+
+    reason = preference_mismatch(make_job(location="Austin, TX"), user)
+    assert reason is not None
+    assert "Texas" in reason and "Washington" in reason
+
+
+def test_an_unreadable_location_is_not_a_state_mismatch(make_job) -> None:
+    user = _user(target_cities=[], target_country="United States", target_states=["WA"])
+
+    assert preference_mismatch(make_job(location="Unspecified"), user) is None

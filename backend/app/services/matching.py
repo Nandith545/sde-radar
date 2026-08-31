@@ -17,6 +17,7 @@ from .job_facets import (
     seniority_distance,
     seniority_from_years,
 )
+from .regions import infer_subdivision, state_label
 
 # Seniority vocabulary now lives in job_facets alongside the other inference.
 # SENIOR_WORDS was declared here and never read by anything.
@@ -97,6 +98,21 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
         ):
             score -= 15
             flag_parts.append(f"This looks like it's in {job_country.title()}, not {user.target_country}.")
+
+    # State/province, on the same terms as country: only a confident reading
+    # counts, and an empty target_states means every state rather than none.
+    # A posting whose subdivision cannot be read from its location string --
+    # "Remote (USA)", "Unspecified", a bare ambiguous city -- is left alone.
+    wanted_states = user.target_states or []
+    if wanted_states and user.target_country:
+        country = normalize_country(user.target_country)
+        job_state = infer_subdivision(job.location or "", country)
+        if job_state and infer_work_mode(job.location or "", job.title or "") != "remote":
+            if job_state in wanted_states:
+                score += 6
+            else:
+                score -= 12
+                flag_parts.append(f"This is in {state_label(country, job_state)}, which you didn't select.")
     if any(w in title_l for w in PART_TIME_WORDS) or (job.job_type or "").lower() in (
         "part-time",
         "contract",
@@ -195,6 +211,13 @@ def preference_mismatch(job: JobListing, user: User) -> str | None:
             job_country = infer_country(job.location or "")
             if job_country != "unknown" and wanted and job_country != wanted:
                 return f"This is in {job_country.title()}, not {user.target_country}."
+
+            job_state = infer_subdivision(job.location or "", wanted)
+            states = user.target_states or []
+            if states and job_state and job_state not in states:
+                picked = [state_label(wanted, code) for code in states]
+                names = picked[0] if len(picked) == 1 else f"{', '.join(picked[:-1])} or {picked[-1]}"
+                return f"This is in {state_label(wanted, job_state)}, not {names}."
 
     if user.min_salary:
         pay = annual_comp(job.comp_min, job.comp_max, job.comp_unit or "year")

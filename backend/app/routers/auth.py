@@ -11,6 +11,8 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..rate_limit import SlidingWindowRateLimiter
 from ..security import create_access_token, dummy_verify, hash_password, verify_password
+from ..services.job_facets import normalize_country
+from ..services.regions import COUNTRIES
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +53,43 @@ def _work_mode(value: str) -> schemas.WorkMode:
     return ""
 
 
+def _clean_states(codes: list[str], target_country: str) -> list[str]:
+    """Validate subdivision codes against the country they belong to.
+
+    An unknown code is a 422 rather than a silent drop. Dropping it would
+    *widen* the search rather than narrow it -- an empty list means "all
+    states" -- so a typo would quietly return more jobs than asked for, which
+    is the kind of wrong that never looks like an error.
+    """
+    if not codes:
+        return []
+    slug = normalize_country(target_country)
+    if slug not in COUNTRIES:
+        raise HTTPException(
+            status_code=422,
+            detail="Pick a country before selecting states.",
+        )
+    known = {sub.code for sub in COUNTRIES[slug].subdivisions}
+    cleaned: list[str] = []
+    for raw in codes:
+        code = raw.strip().upper()
+        if code not in known:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{raw}' is not a region of {COUNTRIES[slug].label}.",
+            )
+        if code not in cleaned:
+            cleaned.append(code)
+    return cleaned
+
+
 def _user_out(user: models.User) -> schemas.UserOut:
     return schemas.UserOut(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         target_cities=user.target_cities or [],
+        target_states=user.target_states or [],
         target_titles=user.target_titles,
         target_country=user.target_country,
         work_mode=_work_mode(user.work_mode),
@@ -142,8 +175,22 @@ def update_me(
         current_user.target_cities = seen
     if payload.target_titles is not None:
         current_user.target_titles = payload.target_titles
+
+    # Country before states, and a changed country drops the old selection:
+    # subdivision codes only mean anything inside one country, so carrying
+    # "WA" from the United States into Australia would silently turn a
+    # Washington preference into a Western Australia one.
+    country_changed = (
+        payload.target_country is not None and payload.target_country != current_user.target_country
+    )
     if payload.target_country is not None:
         current_user.target_country = payload.target_country
+    if payload.target_states is not None:
+        current_user.target_states = _clean_states(payload.target_states, current_user.target_country)
+    elif country_changed:
+        current_user.target_states = []
+    if payload.target_states is not None:
+        current_user.target_states = _clean_states(payload.target_states, current_user.target_country)
     if payload.work_mode is not None:
         current_user.work_mode = payload.work_mode
     if payload.seniority is not None:

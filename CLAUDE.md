@@ -26,7 +26,7 @@ cd backend && uvicorn app.main:app --reload      # API on :8000
 cd frontend && npm run dev                       # Vite dev server on :5173, proxies /api
 
 # Individual gates
-cd backend  && pytest                            # 278 tests
+cd backend  && pytest                            # 348 tests
 cd backend  && ruff check app/ tests/ && ruff format app/ tests/
 cd backend  && mypy
 cd backend  && alembic check                     # models vs migrations drift
@@ -70,6 +70,42 @@ The two differ in both directions — a configured board can be empty, and a
 board whose credentials were removed still has its jobs in the pool. `seed` is
 a valid board name for filtering even though it has no connector module; it
 is the only one a fresh install has.
+
+**Region data is bundled, not geocoded** (`services/regions.py`). Country →
+state/province → city for the eight countries `_COUNTRY_ALIASES` recognises,
+because a preference has to be settable *before* a job from that place has
+been ingested. The live counts annotating each option come from the pool at
+request time (`/api/regions/{country}`); the vocabulary itself is static.
+Country slugs match `infer_country`'s exactly, so a saved preference compares
+against an inferred posting with no translation layer.
+
+Three rules there are load-bearing:
+
+- **A city in two subdivisions resolves to neither.** Portland is in Oregon
+  and Maine, Springfield in Illinois and Missouri. Picking a favourite would
+  file half those postings under a state they aren't in, so a bare ambiguous
+  name reports unknown — the same fail-quiet stance as work mode and country.
+  A code in the string ("Portland, OR") resolves before this ever applies.
+- **Two-letter tokens are only read as codes where addresses use them**
+  (`has_coded_addresses`). Doing it for Germany would turn any stray "BE"
+  into Berlin.
+- **Cities carry aliases** (`Munich=München`, `Bengaluru=Bangalore`). Boards
+  disagree about which name to use, and two rows for one city — with the
+  count split across them — is a picker bug.
+
+**`target_states` is cleared when `target_country` changes**, in both the API
+and the picker. "WA" is Washington in the US and Western Australia in
+Australia; carrying it across silently changes what the user asked for. An
+empty list means *all* states, not none — that's what every existing user was
+backfilled with.
+
+**Postal codes fill the profile address; they never filter jobs.** No
+connector returns one and `JobListing` has no column for one, so a
+postal-code job filter could only ever match nothing. Only the US, Canada and
+Australia are supported, because those are the schemes that map to a
+subdivision cleanly — UK outward codes, German PLZ, Indian PINs and Dutch
+ranges all cross boundaries often enough that a table would be quietly wrong
+about someone's own address.
 
 **Cross-source dedup** (`services/dedup.py`) is two-tier: an exact match on
 normalized `company|title|city`, then a fuzzy title match (difflib, 0.87)
