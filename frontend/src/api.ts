@@ -242,8 +242,25 @@ export interface Stats {
 
 export type PostedWithin = "1d" | "7d" | "14d" | "30d";
 
-export async function listJobs(postedWithin: PostedWithin = "30d"): Promise<Job[]> {
-  return request(`/jobs?posted_within=${postedWithin}`);
+/** A board in the picker, with how many of its postings are in the window.
+ * Derived from the job pool, not the connector registry: a board is offered
+ * only when selecting it would show something. */
+export interface JobSourceCount {
+  name: string;
+  count: number;
+}
+
+/** `source` narrows to one job board; "all" (or omitted) means every board.
+ * An unknown name is a 422 rather than an empty list, so the caller can tell
+ * "no such board" apart from "this board is quiet". */
+export async function listJobs(postedWithin: PostedWithin = "30d", source?: string): Promise<Job[]> {
+  const params = new URLSearchParams({ posted_within: postedWithin });
+  if (source) params.set("source", source);
+  return request(`/jobs?${params}`);
+}
+
+export async function listJobSources(postedWithin: PostedWithin = "30d"): Promise<JobSourceCount[]> {
+  return request(`/jobs/sources?posted_within=${postedWithin}`);
 }
 
 export async function getStats(): Promise<Stats> {

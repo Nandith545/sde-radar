@@ -242,3 +242,163 @@ def test_a_tracked_job_stays_visible_when_preferences_stop_matching(
     )
     assert still_there is not None
     assert still_there["status"] == "applied"
+
+
+# ---- Filtering by job board -------------------------------------------
+
+
+def test_filtering_by_source_returns_only_that_board(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    headers = user_with_resume["headers"]
+    jobs = client.get("/api/jobs?source=adzuna", headers=headers).json()
+
+    assert jobs
+    for job in jobs:
+        assert "adzuna" in job["sources"]
+    # And it is genuinely a subset -- the fixture pool spans three boards.
+    assert len(jobs) < len(client.get("/api/jobs", headers=headers).json())
+
+
+def test_a_job_seen_on_two_boards_appears_under_both(
+    client: TestClient, user_with_resume: dict, db, make_job
+) -> None:
+    """Dedup merges one req across boards. Filtering on the board that found
+    it second must still find it, so this cannot key off `job.source`."""
+    db.add(
+        make_job(
+            external_id="adzuna:99",
+            source="adzuna",
+            sources=[
+                {"name": "adzuna", "external_id": "99", "url": ""},
+                {"name": "greenhouse", "external_id": "99", "url": ""},
+            ],
+        )
+    )
+    db.commit()
+
+    headers = user_with_resume["headers"]
+    from_adzuna = client.get("/api/jobs?source=adzuna", headers=headers).json()
+    from_greenhouse = client.get("/api/jobs?source=greenhouse", headers=headers).json()
+
+    assert {j["id"] for j in from_adzuna} & {j["id"] for j in from_greenhouse}
+
+
+def test_source_all_is_the_same_as_no_filter(client: TestClient, user_with_resume: dict, seed_jobs) -> None:
+    headers = user_with_resume["headers"]
+    everything = client.get("/api/jobs", headers=headers).json()
+    explicit = client.get("/api/jobs?source=all", headers=headers).json()
+
+    assert [j["id"] for j in explicit] == [j["id"] for j in everything]
+
+
+def test_an_unknown_source_is_rejected_rather_than_returning_nothing(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    """An empty page and a bad board name are different facts, and the user
+    can only act on one of them."""
+    response = client.get("/api/jobs?source=linkedout", headers=user_with_resume["headers"])
+    assert response.status_code == 422
+    assert "greenhouse" in response.json()["detail"]
+
+
+def test_seed_postings_are_filterable(client: TestClient, user_with_resume: dict, db, make_job) -> None:
+    """The bundled pool has no connector module, but it is the only board a
+    fresh install with no credentials has."""
+    db.add(make_job(external_id="seed:1", source="seed", sources=[]))
+    db.commit()
+
+    jobs = client.get("/api/jobs?source=seed", headers=user_with_resume["headers"]).json()
+    assert [j["sources"] for j in jobs] == [["seed"]]
+
+
+def test_source_and_window_filters_compose(client: TestClient, user_with_resume: dict, db, make_job) -> None:
+    import datetime
+
+    db.add(
+        make_job(
+            external_id="adzuna:old",
+            source="adzuna",
+            sources=[{"name": "adzuna", "external_id": "old", "url": ""}],
+            posted=(datetime.date.today() - datetime.timedelta(days=20)).isoformat(),
+        )
+    )
+    db.commit()
+
+    headers = user_with_resume["headers"]
+    month = client.get("/api/jobs?source=adzuna&posted_within=30d", headers=headers).json()
+    week = client.get("/api/jobs?source=adzuna&posted_within=7d", headers=headers).json()
+
+    assert {j["id"] for j in week} < {j["id"] for j in month}
+
+
+# ---- The board picker --------------------------------------------------
+
+
+def test_job_sources_counts_the_boards_present_in_the_pool(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    facets = client.get("/api/jobs/sources", headers=user_with_resume["headers"]).json()
+
+    assert {f["name"] for f in facets} == {"adzuna", "jooble", "remotive"}
+    assert all(f["count"] == 1 for f in facets)
+
+
+def test_job_sources_lists_busiest_first(client: TestClient, user_with_resume: dict, db, make_job) -> None:
+    for i in range(3):
+        db.add(
+            make_job(
+                external_id=f"lever:{i}",
+                source="lever",
+                sources=[{"name": "lever", "external_id": str(i), "url": ""}],
+            )
+        )
+    db.add(
+        make_job(
+            external_id="remotive:1",
+            source="remotive",
+            sources=[{"name": "remotive", "external_id": "1", "url": ""}],
+        )
+    )
+    db.commit()
+
+    facets = client.get("/api/jobs/sources", headers=user_with_resume["headers"]).json()
+    assert [f["name"] for f in facets] == ["lever", "remotive"]
+    assert [f["count"] for f in facets] == [3, 1]
+
+
+def test_job_sources_counts_match_what_the_filter_returns(
+    client: TestClient, user_with_resume: dict, seed_jobs
+) -> None:
+    """The count on a dropdown option has to be the number of jobs the page
+    it opens will actually list, or the picker lies."""
+    headers = user_with_resume["headers"]
+    for facet in client.get("/api/jobs/sources", headers=headers).json():
+        listed = client.get(f"/api/jobs?source={facet['name']}", headers=headers).json()
+        assert len(listed) == facet["count"], facet["name"]
+
+
+def test_job_sources_omits_boards_with_nothing_in_the_window(
+    client: TestClient, user_with_resume: dict, db, make_job
+) -> None:
+    """A board that leads to an empty page is not offered as a choice."""
+    import datetime
+
+    db.add(
+        make_job(
+            external_id="jooble:stale",
+            source="jooble",
+            sources=[{"name": "jooble", "external_id": "stale", "url": ""}],
+            posted=(datetime.date.today() - datetime.timedelta(days=25)).isoformat(),
+        )
+    )
+    db.commit()
+
+    headers = user_with_resume["headers"]
+    assert "jooble" in {f["name"] for f in client.get("/api/jobs/sources", headers=headers).json()}
+    narrow = client.get("/api/jobs/sources?posted_within=7d", headers=headers).json()
+    assert "jooble" not in {f["name"] for f in narrow}
+
+
+def test_job_sources_requires_authentication(client: TestClient) -> None:
+    assert client.get("/api/jobs/sources").status_code == 401

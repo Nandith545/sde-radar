@@ -26,7 +26,7 @@ cd backend && uvicorn app.main:app --reload      # API on :8000
 cd frontend && npm run dev                       # Vite dev server on :5173, proxies /api
 
 # Individual gates
-cd backend  && pytest                            # 128 tests
+cd backend  && pytest                            # 278 tests
 cd backend  && ruff check app/ tests/ && ruff format app/ tests/
 cd backend  && mypy
 cd backend  && alembic check                     # models vs migrations drift
@@ -55,6 +55,21 @@ def fetch(search_terms: list[str], where: str) -> list[RawJob]
 Register it in `REGISTRY` in that package's `__init__.py` and everything else
 — orchestration, dedup, UI badges — works automatically. Wrap per-listing
 parsing in try/except so one malformed posting can't kill a whole refresh.
+
+**Filtering by board matches every board a posting was seen on**, not
+`job.source`. `GET /api/jobs?source=<board>` and the `/boards/:source` page
+it backs both test membership of the `sources` list, because dedup merges one
+req across boards — keying off `source` (the board that happened to find it
+first) would drop the posting from whichever board answered second. There is
+a test that fails if someone "simplifies" it back.
+
+`GET /api/jobs/sources` drives the board dropdown and is derived from the job
+pool, not from `REGISTRY`: it answers "which boards have something to show in
+this window", where `/api/sources` answers "which connectors are configured".
+The two differ in both directions — a configured board can be empty, and a
+board whose credentials were removed still has its jobs in the pool. `seed` is
+a valid board name for filtering even though it has no connector module; it
+is the only one a fresh install has.
 
 **Cross-source dedup** (`services/dedup.py`) is two-tier: an exact match on
 normalized `company|title|city`, then a fuzzy title match (difflib, 0.87)

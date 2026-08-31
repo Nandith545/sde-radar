@@ -64,6 +64,10 @@ def test_nothing_outside_the_root_is_reachable(static_root: Path) -> None:
         "assets/../../.env",
         ".env",
         "settings",  # a real client route: also a miss, also -> index.html
+        # Nested client routes matter too: a board page is meant to be a
+        # link you can share and reload, which only works if the two-segment
+        # path falls through to the SPA rather than being looked up as a file.
+        "boards/greenhouse",
     ],
 )
 def test_a_traversal_or_client_route_is_not_in_the_allowlist(static_root: Path, payload: str) -> None:

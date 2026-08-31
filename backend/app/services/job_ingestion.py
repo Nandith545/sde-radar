@@ -10,7 +10,7 @@ from .. import models
 from .dedup import find_duplicate, make_dedup_key, normalize_company, normalize_title
 from .seed_jobs import SEED_JOBS
 from .skills import extract_skills
-from .sources import REGISTRY, active_sources
+from .sources import REGISTRY, SEED_SOURCE, active_sources
 from .sources.base import RawJob
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ def seed_if_empty(db: Session) -> int:
         return 0
     raw_jobs = [
         RawJob(
-            source="seed",
+            source=SEED_SOURCE,
             external_id=job["external_id"],
             title=job["title"],
             company=job["company"],
