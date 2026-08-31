@@ -5,7 +5,8 @@
 //   BASE_URL=http://localhost:8000 OUT_DIR=./shots node tests/screenshot.mjs
 //
 // Writes: login.png, dashboard.png, dashboard-mobile.png, board.png,
-//         board-mobile.png
+//         board-mobile.png, settings.png, settings-states-open.png,
+//         settings-mobile.png
 import { chromium } from "playwright";
 import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,6 +80,24 @@ try {
   await page.setViewportSize({ width: 390, height: 1200 });
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(OUT_DIR, "board-mobile.png") });
+
+  // Settings, with the region cascade open: country -> states -> cities is
+  // the part of this page that can only be checked by looking at it.
+  await page.setViewportSize({ width: 1280, height: 1500 });
+  await page.goto(BASE + "/settings", { waitUntil: "networkidle" });
+  await page.selectOption("#set-country", "united states");
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: join(OUT_DIR, "settings.png") });
+
+  // Open the states dropdown so the checkbox list and its job counts are
+  // actually in the shot.
+  await page.click('button[aria-expanded="false"]');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(OUT_DIR, "settings-states-open.png") });
+
+  await page.setViewportSize({ width: 390, height: 1400 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(OUT_DIR, "settings-mobile.png") });
 
   console.log(`Screenshots written to ${OUT_DIR}/`);
 } finally {

@@ -110,14 +110,77 @@ try {
   const statusAfterReload = await page.$eval(".status-select", (el) => el.value);
   if (statusAfterReload !== "applied") throw new Error("Status did not persist across reload");
 
-  console.log("9. Sign out returns to login");
+  console.log("9. Region cascade: country narrows states, states narrow cities");
+  await page.goto(BASE + "/settings", { waitUntil: "networkidle" });
+  await page.selectOption("#set-country", "united states");
+  await page.waitForSelector(".checkbox-dropdown .dropdown-toggle:not([disabled])");
+
+  // Tick one state, then confirm the city list is scoped to it. This is the
+  // whole point of the picker and nothing below the UI can check it: the API
+  // serves every state's cities in one payload and it is the cascade that
+  // narrows them.
+  await page.click(".checkbox-dropdown .dropdown-toggle >> nth=0");
+  await page.fill(".dropdown-search", "wash");
+  await page.click('.dropdown-scroll .dropdown-option:has-text("Washington") input');
+  await page.keyboard.press("Escape");
+
+  await page.click(".checkbox-dropdown .dropdown-toggle >> nth=1");
+  const offered = await page.$$eval(".dropdown-scroll .dropdown-option span:first-of-type", (n) =>
+    n.map((x) => x.textContent.trim()));
+  if (!offered.includes("Seattle")) throw new Error("Washington's cities were not offered");
+  if (offered.includes("Austin")) throw new Error("Cities outside the selected state were offered");
+  console.log(`   ${offered.length} cities offered for Washington`);
+  await page.click('.dropdown-scroll .dropdown-option:has-text("Bellevue") input');
+  await page.keyboard.press("Escape");
+
+  await page.click('button:has-text("Save preferences")');
+  await page.waitForSelector(".form-success", { timeout: 10000 });
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".checkbox-dropdown .dropdown-toggle:not([disabled])");
+  const savedStates = await page.textContent(".checkbox-dropdown .dropdown-summary >> nth=0");
+  if (savedStates.trim() !== "Washington") {
+    throw new Error(`State selection did not persist, got "${savedStates}"`);
+  }
+
+  // Switching country must drop a selection whose codes no longer mean the
+  // same thing -- "WA" is Washington here and Western Australia there.
+  await page.selectOption("#set-country", "australia");
+  await page.waitForTimeout(500);
+  const afterSwitch = await page.textContent(".checkbox-dropdown .dropdown-summary >> nth=0");
+  if (!afterSwitch.toLowerCase().includes("all")) {
+    throw new Error(`Changing country left a stale state selection: "${afterSwitch}"`);
+  }
+
+  console.log("10. Postal code fills the address, and never claims to filter jobs");
+  await page.selectOption("#set-country", "united states");
+  await page.fill("#set-postal", "98052");
+  await page.waitForSelector(".postal-result", { timeout: 10000 });
+  const resolved = await page.textContent(".postal-result strong");
+  if (resolved.trim() !== "Washington") throw new Error(`98052 resolved to "${resolved}"`);
+  await page.click('button:has-text("Add to address")');
+  const addressValue = await page.inputValue("#set-address");
+  if (!addressValue.includes("WA 98052")) throw new Error(`Address not filled: "${addressValue}"`);
+
+  // Put the preferences back before moving on. The later steps assert on the
+  // first card in the feed, and a narrowed location filter hides the job this
+  // run marked Applied -- which would fail as "status did not persist" when
+  // the status is fine and it is the filter that changed.
+  await page.selectOption("#set-country", "");
+  await page.click('button:has-text("Save preferences")');
+  await page.waitForSelector(".form-success", { timeout: 10000 });
+
+  await page.goto(BASE + "/", { waitUntil: "networkidle" });
+  await page.waitForSelector(".card");
+
+  console.log("11. Sign out returns to login");
   await page.click('button:has-text("Sign out")');
   await page.waitForURL("**/login");
 
   // Registering and logging in take different code paths -- register posts
   // JSON, login posts an OAuth2 password form. Only exercising register let
   // a broken Content-Type on the login request ship to production.
-  console.log("10. Log back in with the same credentials");
+  console.log("12. Log back in with the same credentials");
   const loginStatuses = [];
   page.on("response", (r) => {
     if (r.url().includes("/api/auth/login")) loginStatuses.push(r.status());
@@ -140,7 +203,7 @@ try {
     throw new Error("Unchecked 'keep me signed in' did not confine the token to sessionStorage");
   }
 
-  console.log("11. Session is real: data still there after login");
+  console.log("13. Session is real: data still there after login");
   await page.waitForSelector(".card");
   const statusAfterLogin = await page.$eval(".status-select", (el) => el.value);
   if (statusAfterLogin !== "applied") {

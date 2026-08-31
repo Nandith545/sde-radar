@@ -62,6 +62,16 @@ class User(Base):
     target_country: Mapped[str] = mapped_column(String(100), default="")
     """Free text, matched against a job's location by alias. Empty = anywhere."""
 
+    target_states: Mapped[list[str]] = mapped_column(JSON, default=list)
+    """Subdivision codes within `target_country` -- "WA", "ON", "NSW".
+
+    Empty means every state, which is the default and is *not* the same as
+    "no states": the picker's "All states" box writes an empty list. Codes are
+    only meaningful inside a country, so clearing target_country clears these
+    too; keeping "WA" while switching to Australia would silently turn a
+    Washington preference into a Western Australia one.
+    """
+
     seniority: Mapped[str] = mapped_column(String(20), default="")
     """"entry" | "mid" | "senior", or empty to derive it from the resume."""
 

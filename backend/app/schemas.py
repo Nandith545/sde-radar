@@ -34,6 +34,7 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     target_cities: list[str]
+    target_states: list[str]
     target_titles: str
     target_country: str
     work_mode: WorkMode
@@ -49,6 +50,9 @@ class UserOut(BaseModel):
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     target_cities: list[str] | None = Field(default=None, max_length=20)
+    # An empty list is "all states", so there is no cap worth setting below
+    # the largest country's own count -- 51 for the US, plus headroom.
+    target_states: list[str] | None = Field(default=None, max_length=60)
     target_titles: str | None = Field(default=None, max_length=500)
     target_country: str | None = Field(default=None, max_length=100)
     work_mode: WorkMode | None = None
@@ -152,3 +156,41 @@ class JobSourceOut(BaseModel):
 
     name: str
     count: int
+
+
+class CityOut(BaseModel):
+    name: str
+    job_count: int
+
+
+class SubdivisionOut(BaseModel):
+    code: str
+    label: str
+    job_count: int
+    cities: list[CityOut]
+
+
+class CountryOut(BaseModel):
+    slug: str
+    label: str
+    subdivision_label: str
+    """What this country calls the tier -- State, Province, Land, Nation,
+    County. The picker uses it as its own label, because "State" over a list
+    of Canadian provinces reads as a bug to anyone who lives there."""
+    supports_postal_lookup: bool
+
+
+class CountryDetailOut(CountryOut):
+    subdivisions: list[SubdivisionOut]
+
+
+class PostalLookupOut(BaseModel):
+    """What a postal code resolved to, for filling in a profile address.
+
+    Never used to filter jobs: no connector returns a postal code, so a
+    postal-code job filter could only ever match nothing.
+    """
+
+    code: str
+    label: str
+    cities: list[str]
