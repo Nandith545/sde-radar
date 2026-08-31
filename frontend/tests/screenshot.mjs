@@ -4,7 +4,8 @@
 //
 //   BASE_URL=http://localhost:8000 OUT_DIR=./shots node tests/screenshot.mjs
 //
-// Writes: login.png, dashboard.png, dashboard-mobile.png
+// Writes: login.png, dashboard.png, dashboard-mobile.png, board.png,
+//         board-mobile.png
 import { chromium } from "playwright";
 import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -44,11 +45,13 @@ try {
   await page.fill("#fullName", "Screenshot Tester");
   await page.fill("#email", email);
   await page.fill("#password", "supersecure123");
-  await page.fill("#city", "Seattle, WA");
-  await page.fill("#titles", "Software Engineer, Backend Engineer");
   await page.click('button:has-text("Create account")');
 
+  // Targets are asked for on the dashboard's onboarding banner, not on the
+  // register form -- the same fields the smoke test drives.
   await page.waitForURL(BASE + "/");
+  await page.fill("#onboard-city", "Seattle, WA");
+  await page.fill("#onboard-titles", "Software Engineer, Backend Engineer");
   const fileInput = await page.$("#resume-file");
   await fileInput.setInputFiles(resumePath);
   await page.waitForSelector("text=Upload your resume to get matched jobs", { state: "detached", timeout: 15000 });
@@ -62,6 +65,20 @@ try {
   await page.setViewportSize({ width: 390, height: 1200 });
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(OUT_DIR, "dashboard-mobile.png") });
+
+  // A single board's page, reached the way a user reaches it: by picking the
+  // board out of the dropdown. Captured at both sizes because it carries the
+  // same controls bar as the feed, plus one more control.
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  const board = await page.$eval(".board-select option:not([value='all'])", (o) => o.value);
+  await page.selectOption(".board-select", board);
+  await page.waitForURL("**/boards/" + board + "*");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: join(OUT_DIR, "board.png") });
+
+  await page.setViewportSize({ width: 390, height: 1200 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(OUT_DIR, "board-mobile.png") });
 
   console.log(`Screenshots written to ${OUT_DIR}/`);
 } finally {

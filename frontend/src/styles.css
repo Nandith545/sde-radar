@@ -116,6 +116,14 @@ button{cursor:pointer;}
 .pill-group{display:flex; gap:6px; flex-wrap:wrap;}
 .pill{border:1px solid var(--border); background:var(--surface-2); color:var(--text-muted); border-radius:999px; padding:5px 11px; font-size:12px; font-family:'IBM Plex Mono',monospace;}
 .pill[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong);}
+/* The board picker carries the board's own name, which is lowercase and
+   monospaced everywhere else it appears (source badges, connector pills). */
+.board-select{font-family:'IBM Plex Mono',monospace; font-size:12.5px;}
+
+/* --- A single job board ------------------------------------------------ */
+.board-title{font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:600; margin:0;}
+.board-name{color:var(--accent-strong);}
+.board-blurb{margin:0 0 16px; font-size:13px; color:var(--text-muted);}
 
 .cards{display:flex; flex-direction:column; gap:12px;}
 .card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow);}

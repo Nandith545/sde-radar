@@ -7,8 +7,14 @@ from ..deps import get_current_user
 from ..services.job_facets import FRESHNESS_WINDOWS, MAX_AGE_DAYS, job_age_days
 from ..services.job_ingestion import refresh_from_all_sources
 from ..services.matching import preference_mismatch, score_job
+from ..services.sources import known_source_names
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+# The "no board selected" value. A sentinel rather than an omitted param
+# so the frontend's board route has something to put in the URL for
+# "every board" -- /boards/all is a real page, not a missing one.
+ALL_SOURCES = "all"
 
 
 def _source_names(job: models.JobListing) -> list[str]:
@@ -53,11 +59,22 @@ def _to_job_out(
     )
 
 
-def _matched_jobs(db: Session, user: models.User, within_days: int = MAX_AGE_DAYS) -> list[schemas.JobOut]:
+def _matched_jobs(
+    db: Session,
+    user: models.User,
+    within_days: int = MAX_AGE_DAYS,
+    source: str | None = None,
+) -> list[schemas.JobOut]:
     """Scored jobs, newest first, with anything past the age limit dropped.
 
     `within_days` is clamped to MAX_AGE_DAYS: the ceiling is a property of the
     product, not a default the caller can raise by passing a bigger number.
+
+    `source` narrows to one board, matched against *every* board the posting
+    was seen on rather than the one that happened to find it first. Dedup
+    merges the same req across boards, so a Stripe job picked up by both
+    Greenhouse and Adzuna belongs in either board's list -- filtering on
+    `job.source` alone would drop it from whichever one answered second.
 
     A posting whose age cannot be established at all is kept. That case needs
     both an unparseable `posted` and a missing created_at, which no ingested
@@ -77,6 +94,8 @@ def _matched_jobs(db: Session, user: models.User, within_days: int = MAX_AGE_DAY
         age = job_age_days(job.posted or "", job.created_at)
         if age is not None and age > within_days:
             continue
+        if source is not None and source not in _source_names(job):
+            continue
         result = score_job(job, user, resume)
         existing = match_map.get(job.id)
         status = existing.status if existing else models.StatusEnum.new
@@ -90,22 +109,74 @@ def _matched_jobs(db: Session, user: models.User, within_days: int = MAX_AGE_DAY
     return [entry for _, entry in out]
 
 
-@router.get("", response_model=list[schemas.JobOut])
-def list_jobs(
-    posted_within: str = Query(
-        "30d",
-        description="One of 1d, 7d, 14d, 30d. Anything older than 30 days is never returned.",
-    ),
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def _resolve_window(posted_within: str) -> int:
     days = FRESHNESS_WINDOWS.get(posted_within)
     if days is None:
         raise HTTPException(
             status_code=422,
             detail=f"posted_within must be one of: {', '.join(FRESHNESS_WINDOWS)}.",
         )
-    return _matched_jobs(db, current_user, days)
+    return days
+
+
+def _resolve_source(source: str | None) -> str | None:
+    """Validate a board name, or None for every board.
+
+    An unknown name is rejected rather than quietly returning nothing: a
+    typo'd or renamed board would otherwise render as a page that looks like
+    "this board has no jobs right now", which is a different fact.
+    """
+    if source is None or source == ALL_SOURCES:
+        return None
+    known = known_source_names()
+    if source not in known:
+        raise HTTPException(
+            status_code=422,
+            detail=f"source must be one of: {', '.join(known)}.",
+        )
+    return source
+
+
+@router.get("", response_model=list[schemas.JobOut])
+def list_jobs(
+    posted_within: str = Query(
+        "30d",
+        description="One of 1d, 7d, 14d, 30d. Anything older than 30 days is never returned.",
+    ),
+    source: str | None = Query(
+        None,
+        description='Narrow to one job board. Omit, or pass "all", for every board.',
+    ),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _matched_jobs(db, current_user, _resolve_window(posted_within), _resolve_source(source))
+
+
+@router.get("/sources", response_model=list[schemas.JobSourceOut])
+def job_sources(
+    posted_within: str = Query("30d"),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The boards that actually have postings in this window, with counts.
+
+    Derived from the pool rather than from the connector registry, because
+    those two answer different questions. `/api/sources` says which
+    connectors are configured; this says which boards have something to show,
+    which is what a picker needs -- a configured board with nothing in the
+    window would otherwise be an option leading to an empty page, and a board
+    whose credentials were removed after it ingested jobs would be missing
+    despite its jobs still being here.
+    """
+    counts: dict[str, int] = {}
+    for job in _matched_jobs(db, current_user, _resolve_window(posted_within)):
+        for name in job.sources:
+            counts[name] = counts.get(name, 0) + 1
+    # Busiest first, then alphabetically so equal counts hold a stable order
+    # instead of shuffling between requests.
+    ordered = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    return [schemas.JobSourceOut(name=name, count=count) for name, count in ordered]
 
 
 @router.get("/stats", response_model=schemas.StatsOut)

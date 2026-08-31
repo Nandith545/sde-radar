@@ -1,60 +1,56 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../api";
 import KanbanBoard from "../components/KanbanBoard";
-import type { Job, JobStatus, Stats, SourceStatus, PostedWithin, UserDocument } from "../api";
+import type { Job, JobSourceCount, JobStatus, Stats, SourceStatus, PostedWithin, UserDocument } from "../api";
 import JobCard from "../components/JobCard";
+import JobFilterBar from "../components/JobFilterBar";
 import ResumeUpload from "../components/ResumeUpload";
-
-const STATUS_FILTERS: { value: JobStatus | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "new", label: "New" },
-  { value: "saved", label: "Saved" },
-  { value: "applied", label: "Applied" },
-  { value: "interviewing", label: "Interviewing" },
-  { value: "offer", label: "Offer" },
-  { value: "rejected", label: "Rejected" },
-];
-
-// Capped at 30 days because the API refuses anything older, whatever is
-// asked for. No "last hour": every connector truncates its timestamp to a
-// date, so hour-level freshness is not something this data can support.
-const POSTED_WINDOWS: { value: PostedWithin; label: string }[] = [
-  { value: "1d", label: "Posted: Last 24 hours" },
-  { value: "7d", label: "Posted: Last 7 days" },
-  { value: "14d", label: "Posted: Last 14 days" },
-  { value: "30d", label: "Posted: Last 30 days" },
-];
+import {
+  ALL_BOARDS,
+  filterJobs,
+  filtersFromParams,
+  filtersToParams,
+  postedWithinFromParams,
+  type JobFilters,
+} from "../jobFilters";
 
 export default function Dashboard() {
   const { user, logout, refreshUser } = useAuth();
+  const navigate = useNavigate();
+  // Selections live in the URL, not in state, so they survive a reload and
+  // can be handed to a board page and back again unchanged.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo<JobFilters>(() => filtersFromParams(searchParams), [searchParams]);
+  const postedWithin = useMemo(() => postedWithinFromParams(searchParams), [searchParams]);
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [sources, setSources] = useState<SourceStatus[]>([]);
+  const [boards, setBoards] = useState<JobSourceCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
-  // Newest-first by default: the API already returns them in that order,
-  // and a stale-but-strong match is worth less than a fresh decent one.
-  const [sort, setSort] = useState<"score" | "comp" | "posted">("posted");
-  const [postedWithin, setPostedWithin] = useState<PostedWithin>("30d");
-  // On by default: a preference the user set should change what they see, not
-  // just the order. The count of what it hides is shown, with a way back.
-  const [onlyMatches, setOnlyMatches] = useState(true);
   // Two views over the same data: "matches" is the incoming feed, "board" is
   // the pipeline of jobs already acted on. A job leaves one by entering the
   // other, so they are tabs rather than filters.
   const [view, setView] = useState<"matches" | "board">("matches");
   const [documents, setDocuments] = useState<UserDocument[]>([]);
-  const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
+
+  const applyFilters = (next: JobFilters, window: PostedWithin = postedWithin) =>
+    setSearchParams(filtersToParams(next, window), { replace: true });
 
   const load = async () => {
     setLoading(true);
     try {
-      const [j, s] = await Promise.all([api.listJobs(postedWithin), api.getStats()]);
+      const [j, s, b] = await Promise.all([
+        api.listJobs(postedWithin),
+        api.getStats(),
+        api.listJobSources(postedWithin),
+      ]);
       setJobs(j);
       setStats(s);
+      setBoards(b);
     } finally {
       setLoading(false);
     }
@@ -89,21 +85,15 @@ export default function Dashboard() {
     }
   };
 
-  const visibleJobs = useMemo(() => {
-    let list = jobs.slice();
-    if (onlyMatches) list = list.filter((j) => j.matches_preferences);
-    if (statusFilter !== "all") list = list.filter((j) => j.status === statusFilter);
-    if (query) {
-      const q = query.toLowerCase();
-      list = list.filter((j) => `${j.title} ${j.company}`.toLowerCase().includes(q));
-    }
-    if (sort === "score") list.sort((a, b) => b.score - a.score);
-    else if (sort === "comp") {
-      const annual = (j: Job) => (j.comp_unit === "hour" ? (j.comp_max ?? 0) * 2080 : j.comp_max ?? 0);
-      list.sort((a, b) => annual(b) - annual(a));
-    } else if (sort === "posted") list.sort((a, b) => (a.posted < b.posted ? 1 : -1));
-    return list;
-  }, [jobs, query, sort, statusFilter, onlyMatches]);
+  // Picking a board leaves the feed for that board's own page, carrying the
+  // current selections so the list arrives narrowed the same way.
+  const onSource = (next: string) => {
+    if (next === ALL_BOARDS) return;
+    const query = filtersToParams(filters, postedWithin).toString();
+    navigate(`/boards/${next}${query ? `?${query}` : ""}`);
+  };
+
+  const visibleJobs = useMemo(() => filterJobs(jobs, filters), [jobs, filters]);
 
   const hiddenByPreferences = jobs.filter((j) => !j.matches_preferences).length;
   // Anything the user has touched belongs on the board, whatever the current
@@ -204,55 +194,24 @@ export default function Dashboard() {
       </div>
 
       {view === "matches" && (
-      <div className="controls">
-        <input
-          type="search"
-          placeholder="Search title or company…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+        <JobFilterBar
+          filters={filters}
+          onChange={applyFilters}
+          postedWithin={postedWithin}
+          onPostedWithin={(w) => applyFilters(filters, w)}
+          boards={boards}
+          source={ALL_BOARDS}
+          onSource={onSource}
         />
-        <select
-          value={postedWithin}
-          aria-label="Posted within"
-          onChange={(e) => setPostedWithin(e.target.value as PostedWithin)}
-        >
-          {POSTED_WINDOWS.map((w) => (
-            <option key={w.value} value={w.value}>{w.label}</option>
-          ))}
-        </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-          <option value="score">Sort: Match score</option>
-          <option value="comp">Sort: Compensation</option>
-          <option value="posted">Sort: Most recent</option>
-        </select>
-        <label className="checkbox-row inline">
-          <input
-            type="checkbox"
-            checked={onlyMatches}
-            onChange={(e) => setOnlyMatches(e.target.checked)}
-          />
-          <span>Only my preferences</span>
-        </label>
-        <div className="pill-group">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              className="pill"
-              aria-pressed={statusFilter === f.value}
-              onClick={() => setStatusFilter(f.value)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      </div>
       )}
 
-      {!loading && view === "matches" && onlyMatches && hiddenByPreferences > 0 && (
+      {!loading && view === "matches" && filters.onlyMatches && hiddenByPreferences > 0 && (
         <div className="filter-note">
           {hiddenByPreferences} {hiddenByPreferences === 1 ? "job doesn't" : "jobs don't"} match your
           preferences and {hiddenByPreferences === 1 ? "is" : "are"} hidden.{" "}
-          <button className="btn-link" onClick={() => setOnlyMatches(false)}>Show them</button>
+          <button className="btn-link" onClick={() => applyFilters({ ...filters, onlyMatches: false })}>
+            Show them
+          </button>
         </div>
       )}
 
@@ -275,8 +234,8 @@ export default function Dashboard() {
         <div className="empty-state">
           {jobs.length === 0
             ? "Nothing posted in this window. Try a wider one, or hit Refresh jobs."
-            : onlyMatches && hiddenByPreferences > 0
-              ? "Nothing matches your preferences in this window. Widen them in Settings, or untick \u201cOnly my preferences\u201d."
+            : filters.onlyMatches && hiddenByPreferences > 0
+              ? "Nothing matches your preferences in this window. Widen them in Settings, or untick “Only my preferences”."
               : "No jobs match this filter yet."}
         </div>
       ) : (

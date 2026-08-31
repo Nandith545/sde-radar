@@ -139,3 +139,16 @@ class StatsOut(BaseModel):
     applied: int
     interviewing: int
     offers: int
+
+
+class JobSourceOut(BaseModel):
+    """One entry in the board picker: a board and how many of its postings
+    are in the window being asked about.
+
+    The count is over the whole window, before any client-side filter such as
+    "only my preferences" -- it answers "is there anything here", which is
+    what a dropdown option needs to say.
+    """
+
+    name: str
+    count: int
