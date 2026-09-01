@@ -52,10 +52,16 @@ services:
       - key: JOOBLE_API_KEY
         sync: false
       # Per-company boards. Comma-separated slugs, e.g. "stripe,gitlab".
-      # Keyless, so these are the cheapest sources to add -- no quota.
+      # Keyless, so these are the cheapest sources to add -- no quota. The
+      # slug is the last path segment of the company's careers URL on that
+      # ATS; SmartRecruiters slugs are case-sensitive ("BoschGroup").
       - key: GREENHOUSE_COMPANIES
         sync: false
       - key: LEVER_COMPANIES
+        sync: false
+      - key: ASHBY_COMPANIES
+        sync: false
+      - key: SMARTRECRUITERS_COMPANIES
         sync: false
 
   # ---- Staging ----------------------------------------------------------
