@@ -11,7 +11,17 @@ import httpx
 import pytest
 import respx
 
-from app.services.sources import active_sources, adzuna, arbeitnow, greenhouse, jooble, lever, remotive
+from app.services.sources import (
+    active_sources,
+    adzuna,
+    arbeitnow,
+    ashby,
+    greenhouse,
+    jooble,
+    lever,
+    remotive,
+    smartrecruiters,
+)
 from app.services.sources.base import RawJob
 
 # ---- Registry -----------------------------------------------------------
@@ -429,3 +439,294 @@ def test_lever_tolerates_a_non_list_payload(monkeypatch) -> None:
         return_value=httpx.Response(200, json={"error": "not found"})
     )
     assert lever.fetch([], "") == []
+
+
+# ---- Ashby --------------------------------------------------------------
+
+# Mirrors a real board response: field names and value vocabulary were taken
+# from api.ashbyhq.com/posting-api/job-board/ramp, not from the docs alone.
+_ASHBY_PAYLOAD = {
+    "apiVersion": "1",
+    "jobs": [
+        {
+            "id": "34413f8d-26bf-4bbc-8ade-eb309a0e2245",
+            "title": "Senior Software Engineer",
+            "location": "New York, NY (HQ)",
+            "department": "Engineering",
+            "employmentType": "FullTime",
+            "publishedAt": "2026-08-20T17:12:35.753+00:00",
+            "jobUrl": "https://jobs.ashbyhq.com/ramp/34413f8d",
+            "applyUrl": "https://jobs.ashbyhq.com/ramp/34413f8d/application",
+            "descriptionPlain": "Build distributed systems in Python and Go on AWS.",
+            "isRemote": True,
+            "isListed": True,
+            "compensation": {
+                "scrapeableCompensationSalarySummary": "$211.4K - $290.6K",
+                "compensationTierSummary": "$211.4K – $290.6K • Offers Equity",
+            },
+        },
+        {
+            "id": "aaaa1111",
+            "title": "Product Designer",
+            "location": "New York, NY",
+            "employmentType": "FullTime",
+            "publishedAt": "2026-08-21T00:00:00.000+00:00",
+            "jobUrl": "https://jobs.ashbyhq.com/ramp/aaaa1111",
+            "descriptionPlain": "Design things.",
+            "isRemote": False,
+            "isListed": True,
+        },
+        {
+            "id": "bbbb2222",
+            "title": "Software Engineering Intern",
+            "location": "Austin, TX",
+            "employmentType": "Intern",
+            "publishedAt": "2026-08-22T00:00:00.000+00:00",
+            "jobUrl": "https://jobs.ashbyhq.com/ramp/bbbb2222",
+            "descriptionPlain": "Intern on the platform team.",
+            "isRemote": False,
+            "isListed": False,
+        },
+    ],
+}
+
+
+def test_ashby_is_inactive_without_configured_companies(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.ashby_companies", "")
+    assert ashby.is_configured() is False
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp, vanta")
+    assert ashby.is_configured() is True
+
+
+@respx.mock
+def test_ashby_parses_and_filters(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp")
+    respx.get(url__startswith="https://api.ashbyhq.com/posting-api/job-board/ramp").mock(
+        return_value=httpx.Response(200, json=_ASHBY_PAYLOAD)
+    )
+
+    jobs = ashby.fetch(["engineer"], "")
+
+    # The designer is dropped on keyword; the intern is dropped as unlisted.
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.title == "Senior Software Engineer"
+    assert job.company == "Ramp"
+    assert job.external_id == "34413f8d-26bf-4bbc-8ade-eb309a0e2245"
+    assert job.posted == "2026-08-20"
+    assert job.job_type == "Full-time"
+    assert "Python" in job.description
+
+
+@respx.mock
+def test_ashby_reads_the_published_salary_range(monkeypatch) -> None:
+    """Ashby is one of the few boards that publishes a parseable range, which
+    is what makes the salary preference and the compensation sort useful."""
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp")
+    respx.get(url__startswith="https://api.ashbyhq.com/posting-api/job-board/ramp").mock(
+        return_value=httpx.Response(200, json=_ASHBY_PAYLOAD)
+    )
+
+    job = ashby.fetch(["engineer"], "")[0]
+    assert (job.comp_min, job.comp_max, job.comp_unit) == (211400.0, 290600.0, "year")
+
+
+@respx.mock
+def test_ashby_marks_remote_roles_without_doubling_the_hq_label(monkeypatch) -> None:
+    """The location field names the office even on a remote req. Without the
+    suffix a remote job reads as onsite and is filtered out for anyone
+    targeting another city; keeping Ashby's "(HQ)" would render as
+    "New York, NY (HQ) (Remote)", which looks like a bug on the card."""
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp")
+    respx.get(url__startswith="https://api.ashbyhq.com/posting-api/job-board/ramp").mock(
+        return_value=httpx.Response(200, json=_ASHBY_PAYLOAD)
+    )
+
+    assert ashby.fetch(["engineer"], "")[0].location == "New York, NY (Remote)"
+
+
+@respx.mock
+def test_ashby_remote_roles_survive_a_city_filter(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp")
+    respx.get(url__startswith="https://api.ashbyhq.com/posting-api/job-board/ramp").mock(
+        return_value=httpx.Response(200, json=_ASHBY_PAYLOAD)
+    )
+
+    assert len(ashby.fetch(["engineer"], "Seattle, WA")) == 1
+
+
+@respx.mock
+def test_ashby_survives_a_malformed_posting(monkeypatch) -> None:
+    """One bad posting must not cost the whole board."""
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp")
+    payload = {"jobs": [{"id": None, "title": None}, *_ASHBY_PAYLOAD["jobs"]]}
+    respx.get(url__startswith="https://api.ashbyhq.com/posting-api/job-board/ramp").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+
+    assert len(ashby.fetch(["engineer"], "")) == 1
+
+
+@respx.mock
+def test_ashby_returns_nothing_on_an_http_error(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.ashby_companies", "ramp")
+    respx.get(url__startswith="https://api.ashbyhq.com/posting-api/job-board/ramp").mock(
+        return_value=httpx.Response(404, json={"error": "not found"})
+    )
+    assert ashby.fetch([], "") == []
+
+
+# ---- SmartRecruiters ----------------------------------------------------
+
+_SR_LIST = {
+    "offset": 0,
+    "limit": 100,
+    "totalFound": 2,
+    "content": [
+        {
+            "id": "744000146555579",
+            "name": "Software Engineer - AI",
+            "company": {"name": "Bosch Group", "identifier": "BoschGroup"},
+            "location": {"city": "Braga", "region": "Braga", "country": "pt", "remote": False},
+            "releasedDate": "2026-08-27T21:10:17.051Z",
+            "typeOfEmployment": {"label": "Permanent"},
+        },
+        {
+            "id": "744000146555580",
+            "name": "Facilities Coordinator",
+            "company": {"name": "Bosch Group", "identifier": "BoschGroup"},
+            "location": {"city": "Vernon Hills", "region": "IL", "country": "us", "remote": False},
+            "releasedDate": "2026-08-26T00:00:00.000Z",
+            "typeOfEmployment": {"label": "Permanent"},
+        },
+    ],
+}
+
+_SR_DETAIL = {
+    "id": "744000146555579",
+    "jobAd": {
+        "sections": {
+            "jobDescription": {"text": "Build ML pipelines."},
+            "qualifications": {"text": "Python, PyTorch, Kubernetes."},
+            "additionalInformation": {"text": "Hybrid working."},
+        }
+    },
+}
+
+
+def test_smartrecruiters_is_inactive_without_configured_companies(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "")
+    assert smartrecruiters.is_configured() is False
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    assert smartrecruiters.is_configured() is True
+
+
+@respx.mock
+def test_smartrecruiters_parses_and_filters(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(
+        return_value=httpx.Response(200, json=_SR_LIST)
+    )
+    respx.get(url__regex=r".*/postings/744000146555579$").mock(
+        return_value=httpx.Response(200, json=_SR_DETAIL)
+    )
+
+    jobs = smartrecruiters.fetch(["software engineer"], "")
+
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.title == "Software Engineer - AI"
+    assert job.company == "Bosch Group"
+    assert job.posted == "2026-08-27"
+    assert job.job_type == "Full-time"
+
+
+@respx.mock
+def test_smartrecruiters_flattens_the_structured_location(monkeypatch) -> None:
+    """The rest of the pipeline reads a freeform string, and "City, REGION"
+    is the shape the country and region inference are tuned for."""
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(
+        return_value=httpx.Response(200, json=_SR_LIST)
+    )
+    respx.get(url__regex=r".*/postings/\d+$").mock(return_value=httpx.Response(200, json=_SR_DETAIL))
+
+    assert smartrecruiters.fetch(["software engineer"], "")[0].location == "Braga, Braga"
+
+
+@respx.mock
+def test_smartrecruiters_builds_a_link_the_list_response_lacks(monkeypatch) -> None:
+    """applyUrl exists only on the detail record, which most postings never
+    fetch -- so nothing may reach the pool without a working Apply button."""
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(
+        return_value=httpx.Response(200, json=_SR_LIST)
+    )
+    respx.get(url__regex=r".*/postings/\d+$").mock(return_value=httpx.Response(200, json=_SR_DETAIL))
+
+    job = smartrecruiters.fetch(["software engineer"], "")[0]
+    assert job.url == "https://jobs.smartrecruiters.com/BoschGroup/744000146555579"
+
+
+@respx.mock
+def test_smartrecruiters_joins_every_jobad_section(monkeypatch) -> None:
+    """Skills are as often in qualifications as in the description proper."""
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(
+        return_value=httpx.Response(200, json=_SR_LIST)
+    )
+    respx.get(url__regex=r".*/postings/\d+$").mock(return_value=httpx.Response(200, json=_SR_DETAIL))
+
+    description = smartrecruiters.fetch(["software engineer"], "")[0].description
+    assert "PyTorch" in description and "Build ML pipelines" in description
+
+
+@respx.mock
+def test_smartrecruiters_still_emits_a_posting_when_the_detail_call_fails(monkeypatch) -> None:
+    """A listing shown without a description beats one the user never learns
+    exists, so a failed detail fetch degrades rather than drops."""
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(
+        return_value=httpx.Response(200, json=_SR_LIST)
+    )
+    respx.get(url__regex=r".*/postings/\d+$").mock(return_value=httpx.Response(500))
+
+    jobs = smartrecruiters.fetch(["software engineer"], "")
+    assert len(jobs) == 1
+    assert jobs[0].description == ""
+
+
+@respx.mock
+def test_smartrecruiters_caps_detail_requests(monkeypatch) -> None:
+    """Boards here run to thousands of reqs; one detail call per result would
+    make a single refresh unbounded."""
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    monkeypatch.setattr(smartrecruiters, "MAX_DETAIL_FETCHES", 1)
+    many = {
+        "content": [
+            {
+                "id": str(700000000000000 + i),
+                "name": "Software Engineer",
+                "company": {"name": "Bosch Group"},
+                "location": {"city": "Braga", "region": "Braga"},
+                "releasedDate": "2026-08-27T00:00:00.000Z",
+            }
+            for i in range(5)
+        ]
+    }
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(
+        return_value=httpx.Response(200, json=many)
+    )
+    detail = respx.get(url__regex=r".*/postings/\d+$").mock(return_value=httpx.Response(200, json=_SR_DETAIL))
+
+    jobs = smartrecruiters.fetch(["software engineer"], "")
+    assert len(jobs) == 5
+    assert detail.call_count == 1
+    assert sum(1 for j in jobs if j.description) == 1
+
+
+@respx.mock
+def test_smartrecruiters_returns_nothing_on_an_http_error(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
+    respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(return_value=httpx.Response(503))
+    assert smartrecruiters.fetch(["engineer"], "") == []

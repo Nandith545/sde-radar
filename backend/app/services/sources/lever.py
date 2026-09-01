@@ -14,7 +14,7 @@ import logging
 import httpx
 
 from ...config import settings
-from .base import RawJob
+from .base import RawJob, matches_filters
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,6 @@ def _companies() -> list[str]:
 
 def is_configured() -> bool:
     return bool(_companies())
-
-
-def _matches(title: str, location: str, terms: list[str], where_tokens: list[str]) -> bool:
-    if terms and not any(t in title.lower() for t in terms):
-        return False
-    loc = location.lower()
-    is_remote = "remote" in loc
-    return not (not is_remote and where_tokens and location and not any(tok in loc for tok in where_tokens))
 
 
 def _fetch_company(
@@ -65,7 +57,7 @@ def _fetch_company(
                 continue
             categories = item.get("categories") or {}
             location = (categories.get("location") or "").strip()
-            if not _matches(title, location, terms, where_tokens):
+            if not matches_filters(title, location, terms, where_tokens):
                 continue
 
             posted = ""

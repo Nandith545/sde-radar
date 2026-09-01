@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # is_configured() contract the keyed connectors use.
     greenhouse_companies: str = os.getenv("GREENHOUSE_COMPANIES", "")
     lever_companies: str = os.getenv("LEVER_COMPANIES", "")
+    ashby_companies: str = os.getenv("ASHBY_COMPANIES", "")
+    smartrecruiters_companies: str = os.getenv("SMARTRECRUITERS_COMPANIES", "")
 
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 

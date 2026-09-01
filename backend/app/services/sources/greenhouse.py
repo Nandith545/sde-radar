@@ -19,7 +19,7 @@ import re
 import httpx
 
 from ...config import settings
-from .base import RawJob
+from .base import RawJob, matches_filters
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +42,6 @@ def _plain_text(raw: str) -> str:
     if not raw:
         return ""
     return re.sub(r"\s+", " ", _TAG.sub(" ", html.unescape(raw))).strip()
-
-
-def _matches(title: str, location: str, terms: list[str], where_tokens: list[str]) -> bool:
-    if terms and not any(t in title.lower() for t in terms):
-        return False
-    loc = location.lower()
-    is_remote = "remote" in loc
-    return not (not is_remote and where_tokens and location and not any(tok in loc for tok in where_tokens))
 
 
 def _fetch_company(
@@ -79,7 +71,7 @@ def _fetch_company(
             if not title or job_id is None:
                 continue
             location = ((item.get("location") or {}).get("name") or "").strip()
-            if not _matches(title, location, terms, where_tokens):
+            if not matches_filters(title, location, terms, where_tokens):
                 continue
 
             # The board name is the company. The live jobs endpoint often
