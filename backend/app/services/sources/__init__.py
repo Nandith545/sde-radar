@@ -1,8 +1,8 @@
-from . import adzuna, arbeitnow, greenhouse, jooble, lever, remotive
+from . import adzuna, arbeitnow, ashby, greenhouse, jooble, lever, remotive, smartrecruiters
 
 # Order matters only for logging/readability; ingestion treats all sources
 # equally and dedups across whichever ones are configured.
-REGISTRY = [adzuna, jooble, remotive, arbeitnow, greenhouse, lever]
+REGISTRY = [adzuna, jooble, remotive, arbeitnow, greenhouse, lever, ashby, smartrecruiters]
 
 # The bundled demo pool is not a connector -- it has no module in REGISTRY --
 # but its postings carry this as their source name, so anything that offers

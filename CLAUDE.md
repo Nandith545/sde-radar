@@ -26,7 +26,7 @@ cd backend && uvicorn app.main:app --reload      # API on :8000
 cd frontend && npm run dev                       # Vite dev server on :5173, proxies /api
 
 # Individual gates
-cd backend  && pytest                            # 348 tests
+cd backend  && pytest                            # 363 tests
 cd backend  && ruff check app/ tests/ && ruff format app/ tests/
 cd backend  && mypy
 cd backend  && alembic check                     # models vs migrations drift
@@ -55,6 +55,27 @@ def fetch(search_terms: list[str], where: str) -> list[RawJob]
 Register it in `REGISTRY` in that package's `__init__.py` and everything else
 — orchestration, dedup, UI badges — works automatically. Wrap per-listing
 parsing in try/except so one malformed posting can't kill a whole refresh.
+
+**Four of the boards are per-company, not search engines** (Greenhouse,
+Lever, Ashby, SmartRecruiters). They return one employer's whole req list, so
+the keyword and location filtering the search APIs do server side happens in
+`base.matches_filters` instead — shared rather than copied, because the same
+job appearing on one board and not another would be a dedup bug.
+
+SmartRecruiters differs from the other three in two ways worth knowing:
+boards run to thousands of reqs (Bosch publishes ~4,800), so it spends one
+`?q=` search per configured title rather than downloading the board; and
+descriptions live behind a second request per posting, capped by
+`MAX_DETAIL_FETCHES`. Postings past the cap are still emitted without a
+description — a listing that matches weakly beats one the user never sees.
+Its list response also carries no link at all, so the apply URL is built as
+`jobs.smartrecruiters.com/{slug}/{id}`.
+
+**LinkedIn is deliberately absent.** There is no public LinkedIn job-search
+API; the only route is an undocumented guest endpoint that breaches their
+User Agreement, IP-blocks shared hosts like Render, and would sit in a public
+repo linked from a résumé. Most of what LinkedIn surfaces is cross-posted
+from these ATSs anyway, and going to the source gets a real apply link.
 
 **Filtering by board matches every board a posting was seen on**, not
 `job.source`. `GET /api/jobs?source=<board>` and the `/boards/:source` page

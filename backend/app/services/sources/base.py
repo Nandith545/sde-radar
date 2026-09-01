@@ -38,3 +38,23 @@ def first_id(*candidates: object) -> str:
         if text:
             return text
     return ""
+
+
+def matches_filters(title: str, location: str, terms: list[str], where_tokens: list[str]) -> bool:
+    """Whether a posting survives the keyword and location filters.
+
+    Shared by every per-company board connector (Greenhouse, Lever, Ashby,
+    SmartRecruiters). Those boards are not search engines -- they return one
+    employer's entire req list -- so the filtering the keyword APIs do server
+    side has to happen here instead, and it must happen identically or the
+    same job would appear for one board and not another.
+
+    A remote posting is never excluded by location: "remote" is an answer to
+    "where", not a missing one.
+    """
+    if terms and not any(t in title.lower() for t in terms):
+        return False
+    loc = location.lower()
+    if "remote" in loc:
+        return True
+    return not (where_tokens and location and not any(tok in loc for tok in where_tokens))
