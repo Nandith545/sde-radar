@@ -508,3 +508,44 @@ def test_a_city_outside_the_metro_is_still_a_mismatch(make_job) -> None:
     user = _user(target_cities=["Seattle, WA"], target_country="united states")
     assert preference_mismatch(make_job(location="Bremerton, WA"), user) is not None
     assert preference_mismatch(make_job(location="Miami, FL"), user) is not None
+
+
+# ---- Role family ---------------------------------------------------------
+
+
+def test_a_non_building_role_scores_below_an_equivalent_engineering_one(make_job) -> None:
+    """A Forward Deployed Engineer post lists the same technologies as a
+    backend req, so skill overlap scored it like one: two of them ranked 8th
+    and 9th on the seed pool, above real backend work."""
+    resume = _resume(["Python", "AWS", "Docker"])
+    user = _user(target_titles="Software Engineer")
+    skills = ["Python", "AWS", "Docker"]
+
+    builder = score_job(make_job(title="Software Engineer", skills=skills), user, resume)
+    for title in ("Forward Deployed Engineer, Geo", "Data Scientist / AI Engineer", "AI Trainer"):
+        other = score_job(make_job(title=title, skills=skills), user, resume)
+        assert other.score < builder.score, title
+        assert other.flag and "rather than a software engineering one" in other.flag
+
+
+def test_asking_for_that_family_removes_the_penalty(make_job) -> None:
+    """Someone targeting "Data Scientist" must not be penalised for being
+    shown one."""
+    resume = _resume(["Python"])
+    job = make_job(title="Data Scientist", skills=["Python"])
+    wanted = score_job(job, _user(target_titles="Data Scientist"), resume)
+    unwanted = score_job(job, _user(target_titles="Software Engineer"), resume)
+    assert wanted.score > unwanted.score
+    assert not (wanted.flag and "rather than a software engineering one" in wanted.flag)
+
+
+def test_the_markers_are_phrases_not_loose_words(make_job) -> None:
+    """ "Support engineer" is a different job from a backend req that mentions
+    supporting a service."""
+    resume = _resume(["Python"])
+    user = _user(target_titles="Software Engineer")
+    job = make_job(
+        title="Backend Engineer", description="You will support a large service.", skills=["Python"]
+    )
+    result = score_job(job, user, resume)
+    assert not (result.flag and "rather than a software engineering one" in result.flag)

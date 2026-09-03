@@ -22,6 +22,57 @@ from .regions import infer_subdivision, metro_of, state_label
 
 # Seniority vocabulary now lives in job_facets alongside the other inference.
 # SENIOR_WORDS was declared here and never read by anything.
+# Job families that are not a software-building role, however much their
+# description reads like one. A Forward Deployed Engineer post lists the same
+# technologies as a backend req, so skill overlap scores it like one -- on the
+# seed pool two of them ranked 8th and 9th for a backend candidate, above real
+# backend work, and an AI-annotation post ranked 9th for a frontend one.
+#
+# Phrases, not words: "support engineer" is a different job from a backend
+# req that mentions supporting a service, and bare "implementation" appears
+# in plenty of ordinary engineering prose.
+#
+# Only ever applied when the user has not asked for that family themselves --
+# someone targeting "Data Scientist" should not be penalised for being shown
+# one.
+NON_BUILD_ROLE_MARKERS = (
+    "forward deployed",
+    "solutions engineer",
+    "solution engineer",
+    "sales engineer",
+    "presales",
+    "pre-sales",
+    "data scientist",
+    "ai trainer",
+    "ai tutor",
+    "annotator",
+    "annotation",
+    "support engineer",
+    "technical support",
+    "implementation engineer",
+    "implementation & support",
+    "implementation and support",
+    "customer engineer",
+    "technical account",
+    "developer advocate",
+    "developer relations",
+)
+# Sized against both scenarios: the metric is flat from 10 upward (the
+# penalty only has to push these out of the top ten) but inversions keep
+# falling until 30 and then stop, so 30 is the knee rather than a guess.
+NON_BUILD_PENALTY = 30
+
+
+def _non_build_family(title: str, target_titles: list[str]) -> str:
+    """The non-building job family this title belongs to, or "" if none."""
+    text = (title or "").lower()
+    wanted = " ".join(target_titles).lower()
+    for marker in NON_BUILD_ROLE_MARKERS:
+        if marker in text and marker not in wanted:
+            return marker
+    return ""
+
+
 PART_TIME_WORDS = ["part-time", "part time", "contract", "contractor", "temporary", "gig"]
 
 # Skill scoring. The ratio term rewards meeting a posting's stated
@@ -221,6 +272,11 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
             else:
                 score -= 12
                 flag_parts.append(f"This is in {state_label(country, job_state)}, which you didn't select.")
+    non_build = _non_build_family(job.title or "", target_titles)
+    if non_build:
+        score -= NON_BUILD_PENALTY
+        flag_parts.append(f"This reads like a {non_build} role rather than a software engineering one.")
+
     if any(w in title_l for w in PART_TIME_WORDS) or (job.job_type or "").lower() in (
         "part-time",
         "contract",

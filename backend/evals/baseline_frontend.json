@@ -1,0 +1,5 @@
+{
+  "ndcg@10": 0.9511,
+  "precision@5": 0.8,
+  "inversions": 10
+}
