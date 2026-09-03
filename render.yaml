@@ -45,6 +45,12 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "*"
+      # Render terminates TLS at exactly one proxy, which appends the real
+      # client address to X-Forwarded-For. Without this the login throttle
+      # would read the client-written leftmost entry instead and could be
+      # sidestepped entirely; see _client_ip in app/routers/auth.py.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
       - key: ADZUNA_APP_ID
         sync: false
       - key: ADZUNA_APP_KEY
@@ -81,6 +87,12 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "*"
+      # Render terminates TLS at exactly one proxy, which appends the real
+      # client address to X-Forwarded-For. Without this the login throttle
+      # would read the client-written leftmost entry instead and could be
+      # sidestepped entirely; see _client_ip in app/routers/auth.py.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
       # Left unset on purpose: staging runs on the keyless Remotive and
       # Arbeitnow connectors plus the bundled seed pool, so it never spends
       # your Adzuna/Jooble free-tier quota. Add them here if you
