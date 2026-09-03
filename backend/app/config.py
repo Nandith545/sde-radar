@@ -37,6 +37,22 @@ class Settings(BaseSettings):
     login_rate_limit_attempts: int = int(os.getenv("LOGIN_RATE_LIMIT_ATTEMPTS", "10"))
     login_rate_limit_window_seconds: int = int(os.getenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
 
+    # Backstop throttle keyed on the email alone, for when the per-IP key
+    # can't be trusted (see trusted_proxy_hops). Deliberately far looser than
+    # the per-IP limit: keying on email lets someone throttle a user out of
+    # their own account, so the ceiling sits well above what a real person
+    # mistyping their password would ever reach.
+    login_email_rate_limit_attempts: int = int(os.getenv("LOGIN_EMAIL_RATE_LIMIT_ATTEMPTS", "50"))
+    login_email_rate_limit_window_seconds: int = int(
+        os.getenv("LOGIN_EMAIL_RATE_LIMIT_WINDOW_SECONDS", "3600")
+    )
+
+    # How many proxies sit in front of the app and append to X-Forwarded-For.
+    # 0 means "nothing trustworthy is in that header" -- the right answer for
+    # local dev and for the test suite, where the app is reached directly.
+    # Render terminates TLS at one proxy, so its services set this to 1.
+    trusted_proxy_hops: int = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"

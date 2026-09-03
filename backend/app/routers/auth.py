@@ -23,13 +23,36 @@ login_limiter = SlidingWindowRateLimiter(
     window_seconds=settings.login_rate_limit_window_seconds,
 )
 
+# Backstop for when the per-IP half of the key is worthless -- an attacker on
+# a botnet, or one spoofing X-Forwarded-For past a misconfigured hop count.
+# See the ceiling's rationale in config.py.
+email_limiter = SlidingWindowRateLimiter(
+    max_attempts=settings.login_email_rate_limit_attempts,
+    window_seconds=settings.login_email_rate_limit_window_seconds,
+)
+
 
 def _client_ip(request: Request) -> str:
-    # Render terminates TLS at its proxy, so the real client address arrives in
-    # X-Forwarded-For. Take the first entry -- the rest are proxy hops.
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """The client address, taking only the part of X-Forwarded-For we wrote.
+
+    X-Forwarded-For is client-supplied and each proxy *appends* to it, so the
+    leftmost entry is whatever the caller typed and only the rightmost
+    `trusted_proxy_hops` entries came from infrastructure we control. Reading
+    the leftmost entry -- the obvious way, and what this used to do -- hands
+    the attacker half the rate-limit key and unlimited password guesses.
+
+    A chain shorter than the configured hop count means the request didn't
+    arrive by the expected path, so none of the header is trusted. That fails
+    closed onto the proxy's own address, which throttles harder (every user
+    shares one bucket per email) rather than not at all.
+    """
+    hops = settings.trusted_proxy_hops
+    if hops > 0:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            chain = [part.strip() for part in forwarded.split(",") if part.strip()]
+            if len(chain) >= hops:
+                return chain[-hops]
     return request.client.host if request.client else "unknown"
 
 
@@ -122,17 +145,23 @@ def register(payload: schemas.UserRegister, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=schemas.Token)
 def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # Key on email *and* IP: email alone lets an attacker lock a known user out
-    # of their own account, IP alone is trivially sidestepped from a botnet.
-    rate_key = f"{form.username.lower()}|{_client_ip(request)}"
-    allowed, retry_after = login_limiter.check(rate_key)
-    if not allowed:
-        logger.warning("Login rate limit hit for %s", form.username)
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Please try again shortly.",
-            headers={"Retry-After": str(retry_after)},
-        )
+    # Two keys, tight and loose. Email+IP is the working limit: email alone
+    # would let an attacker lock a known user out of their own account, IP
+    # alone is sidestepped from a botnet. But the IP half is only as good as
+    # the hop count it's derived from, so a much looser email-only ceiling
+    # sits behind it and caps guessing against one account no matter where
+    # the requests appear to come from.
+    email_key = form.username.lower()
+    rate_key = f"{email_key}|{_client_ip(request)}"
+    for limiter, key in ((login_limiter, rate_key), (email_limiter, email_key)):
+        allowed, retry_after = limiter.check(key)
+        if not allowed:
+            logger.warning("Login rate limit hit for %s", form.username)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Please try again shortly.",
+                headers={"Retry-After": str(retry_after)},
+            )
 
     user = db.query(models.User).filter(models.User.email == form.username).first()
 
@@ -146,8 +175,9 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
     # Succeeded, so don't leave someone who merely mistyped their password
-    # throttled for the rest of the window.
+    # throttled for the rest of the window -- on either key.
     login_limiter.reset(rate_key)
+    email_limiter.reset(email_key)
     return schemas.Token(access_token=create_access_token(subject=user.email))
 
 

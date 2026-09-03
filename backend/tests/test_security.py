@@ -5,10 +5,11 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
-from app.config import DEV_JWT_SECRET, validate_for_production
+from app.config import DEV_JWT_SECRET, settings, validate_for_production
 from app.rate_limit import SlidingWindowRateLimiter
-from app.routers.auth import login_limiter
+from app.routers.auth import _client_ip, email_limiter, login_limiter
 
 CREDENTIALS = {
     "email": "rate@example.com",
@@ -24,8 +25,10 @@ def _reset_limiter():
     """The limiter is module-level state; without this, tests would leak
     attempt counts into each other and fail depending on ordering."""
     login_limiter.clear()
+    email_limiter.clear()
     yield
     login_limiter.clear()
+    email_limiter.clear()
 
 
 # ---- The limiter itself -------------------------------------------------
@@ -77,7 +80,119 @@ def test_prune_drops_expired_buckets() -> None:
     assert len(limiter._hits) == 0
 
 
+# ---- Client address behind a proxy --------------------------------------
+
+
+def _request(headers: dict[str, str], client_host: str = "10.1.1.1") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+            "client": (client_host, 12345),
+        }
+    )
+
+
+def test_forwarded_header_is_ignored_when_no_proxy_is_trusted(monkeypatch) -> None:
+    """Reached directly, X-Forwarded-For is just something the caller typed."""
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 0)
+    assert _client_ip(_request({"x-forwarded-for": "9.9.9.9"})) == "10.1.1.1"
+
+
+def test_forwarded_header_is_read_from_the_right(monkeypatch) -> None:
+    """The proxy appends, so the entry it wrote is last -- not first. A client
+    that sends its own X-Forwarded-For only pads the untrusted left end."""
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+    request = _request({"x-forwarded-for": "9.9.9.9, 203.0.113.7"})
+    assert _client_ip(request) == "203.0.113.7"
+
+
+def test_a_chain_shorter_than_the_hop_count_is_not_trusted(monkeypatch) -> None:
+    """Two hops configured but one entry present means the request didn't come
+    through the expected path, so the header tells us nothing."""
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 2)
+    assert _client_ip(_request({"x-forwarded-for": "203.0.113.7"})) == "10.1.1.1"
+
+
 # ---- Login endpoint -----------------------------------------------------
+
+
+def test_a_spoofed_forwarded_header_cannot_reset_the_throttle(client: TestClient, monkeypatch) -> None:
+    """The bypass this guards against: the rate-limit key is email+IP, so if
+    the client can dictate the IP half it can make every key unique and guess
+    passwords forever. Reading the leftmost X-Forwarded-For entry let it."""
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 0)
+    client.post("/api/auth/register", json=CREDENTIALS)
+
+    statuses = [
+        client.post(
+            "/api/auth/login",
+            data={"username": CREDENTIALS["email"], "password": "wrong"},
+            headers={"X-Forwarded-For": f"10.0.0.{i}"},
+        ).status_code
+        for i in range(15)
+    ]
+
+    assert 429 in statuses, "a rotating X-Forwarded-For bypassed the throttle"
+
+
+def test_a_spoofed_prefix_behind_a_trusted_proxy_cannot_reset_the_throttle(
+    client: TestClient, monkeypatch
+) -> None:
+    """Same attack with one proxy configured: the attacker's entries land to
+    the left of the one the proxy appended, which is the one we key on."""
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+    client.post("/api/auth/register", json=CREDENTIALS)
+
+    statuses = [
+        client.post(
+            "/api/auth/login",
+            data={"username": CREDENTIALS["email"], "password": "wrong"},
+            headers={"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.7"},
+        ).status_code
+        for i in range(15)
+    ]
+
+    assert 429 in statuses, "spoofed leading entries bypassed the throttle"
+
+
+def test_the_email_backstop_throttles_across_genuinely_different_addresses(
+    client: TestClient, monkeypatch
+) -> None:
+    """Distinct real client addresses -- a botnet, or a hop count set too
+    high -- never trip the per-IP key. The email-only ceiling still caps
+    guessing against one account."""
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+    monkeypatch.setattr(email_limiter, "max_attempts", 3)
+    client.post("/api/auth/register", json=CREDENTIALS)
+
+    statuses = [
+        client.post(
+            "/api/auth/login",
+            data={"username": CREDENTIALS["email"], "password": "wrong"},
+            headers={"X-Forwarded-For": f"203.0.113.{i}"},
+        ).status_code
+        for i in range(4)
+    ]
+
+    assert statuses == [401, 401, 401, 429]
+
+
+def test_a_successful_login_clears_the_email_backstop(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(email_limiter, "max_attempts", 3)
+    client.post("/api/auth/register", json=CREDENTIALS)
+
+    for _ in range(2):
+        client.post("/api/auth/login", data={"username": CREDENTIALS["email"], "password": "wrong"})
+
+    ok = client.post(
+        "/api/auth/login",
+        data={"username": CREDENTIALS["email"], "password": CREDENTIALS["password"]},
+    )
+    assert ok.status_code == 200
+
+    again = client.post("/api/auth/login", data={"username": CREDENTIALS["email"], "password": "wrong"})
+    assert again.status_code == 401
 
 
 def test_repeated_failed_logins_are_throttled(client: TestClient) -> None:
