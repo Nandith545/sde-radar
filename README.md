@@ -1,4 +1,4 @@
-# SDE Radar
+# Offerly
 
 <!-- Replace <your-username>/<your-repo> in these two URLs after you push,
      and the badges will show live build status on the repo home page. -->

@@ -6,7 +6,10 @@
 //
 // Writes: login.png, dashboard.png, dashboard-mobile.png, board.png,
 //         board-mobile.png, settings.png, settings-states-open.png,
-//         settings-mobile.png
+//         settings-mobile.png, and a *-dark.png for each of those.
+//
+// The dark shots drive the real toggle rather than emulateMedia, so what gets
+// captured is the code path a user actually takes.
 import { chromium } from "playwright";
 import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,9 +40,29 @@ const browser = await chromium.launch(launchOpts);
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
 
+  // Force light regardless of the host's OS setting, so "no suffix" always
+  // means light and the pairs are comparable run to run.
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("offerly_theme", "light");
+    } catch {
+      /* storage blocked */
+    }
+  });
+
+  /** Capture the current view in both themes: `name.png` and `name-dark.png`. */
+  const shoot = async (name) => {
+    await page.screenshot({ path: join(OUT_DIR, `${name}.png`) });
+    await page.click(".theme-toggle");
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: join(OUT_DIR, `${name}-dark.png`) });
+    await page.click(".theme-toggle");
+    await page.waitForTimeout(250);
+  };
+
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.waitForURL("**/login");
-  await page.screenshot({ path: join(OUT_DIR, "login.png") });
+  await shoot("login");
 
   await page.click("text=Create an account");
   await page.waitForURL("**/register");
@@ -59,13 +82,13 @@ try {
 
   await page.waitForSelector(".card");
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(OUT_DIR, "dashboard.png") });
+  await shoot("dashboard");
 
   // Phone-sized viewport -- the layout is responsive and regressions here
   // are easy to miss when you only ever look at a desktop window.
   await page.setViewportSize({ width: 390, height: 1200 });
   await page.waitForTimeout(300);
-  await page.screenshot({ path: join(OUT_DIR, "dashboard-mobile.png") });
+  await shoot("dashboard-mobile");
 
   // A single board's page, reached the way a user reaches it: by picking the
   // board out of the dropdown. Captured at both sizes because it carries the
@@ -75,11 +98,11 @@ try {
   await page.selectOption(".board-select", board);
   await page.waitForURL("**/boards/" + board + "*");
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(OUT_DIR, "board.png") });
+  await shoot("board");
 
   await page.setViewportSize({ width: 390, height: 1200 });
   await page.waitForTimeout(300);
-  await page.screenshot({ path: join(OUT_DIR, "board-mobile.png") });
+  await shoot("board-mobile");
 
   // Settings, with the region cascade open: country -> states -> cities is
   // the part of this page that can only be checked by looking at it.
@@ -87,17 +110,30 @@ try {
   await page.goto(BASE + "/settings", { waitUntil: "networkidle" });
   await page.selectOption("#set-country", "united states");
   await page.waitForTimeout(500);
-  await page.screenshot({ path: join(OUT_DIR, "settings.png") });
+  await shoot("settings");
 
-  // Open the states dropdown so the checkbox list and its job counts are
-  // actually in the shot.
-  await page.click('button[aria-expanded="false"]');
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: join(OUT_DIR, "settings-states-open.png") });
+  // The dropdown closes on any outside mousedown, and the theme toggle is
+  // outside it -- so shoot() would silently capture a closed panel in dark.
+  // Each theme runs the open-and-capture sequence in full instead.
+  const settingsStates = async (suffix) => {
+    // Scoped to the region picker: a bare [aria-expanded="false"] would be
+    // ambiguous now that the topbar carries a button of its own.
+    await page.click('.checkbox-dropdown button[aria-expanded="false"]');
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: join(OUT_DIR, `settings-states-open${suffix}.png`) });
 
-  await page.setViewportSize({ width: 390, height: 1400 });
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: join(OUT_DIR, "settings-mobile.png") });
+    // The mobile shot inherits the open dropdown, as it always has.
+    await page.setViewportSize({ width: 390, height: 1400 });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: join(OUT_DIR, `settings-mobile${suffix}.png`) });
+    await page.setViewportSize({ width: 1280, height: 1500 });
+    await page.waitForTimeout(300);
+  };
+
+  await settingsStates("");
+  await page.click(".theme-toggle");
+  await page.waitForTimeout(250);
+  await settingsStates("-dark");
 
   console.log(`Screenshots written to ${OUT_DIR}/`);
 } finally {

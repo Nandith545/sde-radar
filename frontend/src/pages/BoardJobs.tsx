@@ -5,6 +5,7 @@ import * as api from "../api";
 import { ApiError, type Job, type JobSourceCount, type JobStatus, type PostedWithin } from "../api";
 import JobCard from "../components/JobCard";
 import JobFilterBar from "../components/JobFilterBar";
+import TopBar from "../components/TopBar";
 import {
   ALL_BOARDS,
   filterJobs,
@@ -89,22 +90,17 @@ export default function BoardJobs() {
 
   return (
     <div className="shell">
-      <div className="topbar">
-        <div className="brand">
-          <div>
-            <div className="tag">
-              {user.target_cities.length ? user.target_cities.join(" · ") : "Anywhere"} · Matched to your resume
-            </div>
-            <h1 className="board-title">
-              <span className="board-name">{source}</span>
-            </h1>
-          </div>
-        </div>
-        <div className="user-menu">
-          <Link className="btn ghost" to="/">← All boards</Link>
-          <Link className="btn ghost" to="/settings">Settings</Link>
-        </div>
-      </div>
+      <TopBar
+        tag={`${user.target_cities.length ? user.target_cities.join(" · ") : "Anywhere"} · Matched to your resume`}
+        heading={
+          <h1 className="board-title">
+            <span className="board-name">{source}</span>
+          </h1>
+        }
+      >
+        <Link className="btn ghost" to="/">← All boards</Link>
+        <Link className="btn ghost" to="/settings">Settings</Link>
+      </TopBar>
 
       <p className="board-blurb">
         {loading

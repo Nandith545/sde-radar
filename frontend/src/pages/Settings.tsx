@@ -6,6 +6,7 @@ import AccountSecurity from "../components/AccountSecurity";
 import DocumentLibrary from "../components/DocumentLibrary";
 import RegionPicker from "../components/RegionPicker";
 import PostalAutofill from "../components/PostalAutofill";
+import TopBar from "../components/TopBar";
 import { ApiError, type Seniority, type WorkMode } from "../api";
 
 const SENIORITY_LEVELS: { value: Seniority; label: string; blurb: string }[] = [
@@ -114,20 +115,12 @@ export default function Settings() {
 
   return (
     <div className="shell">
-      <div className="topbar">
-        <div className="brand">
-          <div>
-            <div className="tag">Profile &amp; matching preferences</div>
-            <h1>Settings</h1>
-          </div>
-        </div>
-        <div className="user-menu">
-          <Link className="btn secondary" to="/">Back to jobs</Link>
-          <button className="btn ghost" onClick={() => { logout(); navigate("/login"); }}>
-            Sign out
-          </button>
-        </div>
-      </div>
+      <TopBar tag="Profile & matching preferences" heading={<h1>Settings</h1>}>
+        <Link className="btn secondary" to="/">Back to jobs</Link>
+        <button className="btn ghost" onClick={() => { logout(); navigate("/login"); }}>
+          Sign out
+        </button>
+      </TopBar>
 
       {error && <div className="form-error" role="alert">{error}</div>}
       {saved && !error && <div className="form-success" role="status">Saved. Matching updates on your next refresh.</div>}

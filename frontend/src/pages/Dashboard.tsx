@@ -7,6 +7,7 @@ import type { Job, JobSourceCount, JobStatus, Stats, SourceStatus, PostedWithin,
 import JobCard from "../components/JobCard";
 import JobFilterBar from "../components/JobFilterBar";
 import ResumeUpload from "../components/ResumeUpload";
+import TopBar from "../components/TopBar";
 import {
   ALL_BOARDS,
   filterJobs,
@@ -104,26 +105,19 @@ export default function Dashboard() {
 
   return (
     <div className="shell">
-      <div className="topbar">
-        <div className="brand">
-          <div>
-            <div className="tag">
-              {user.target_cities.length ? user.target_cities.join(" · ") : "Anywhere"} · Matched to your resume
-            </div>
-            <h1>SDE Radar</h1>
-          </div>
-        </div>
-        <div className="user-menu">
-          <span>{user.full_name}</span>
-          <button className="btn secondary" onClick={onRefreshJobs} disabled={refreshing}>
-            {refreshing ? "Refreshing…" : "Refresh jobs"}
-          </button>
-          <Link className="btn ghost" to="/settings">Settings</Link>
-          <button className="btn ghost" onClick={logout}>
-            Sign out
-          </button>
-        </div>
-      </div>
+      <TopBar
+        tag={`${user.target_cities.length ? user.target_cities.join(" · ") : "Anywhere"} · Matched to your resume`}
+        heading={<h1>Offerly</h1>}
+      >
+        <span>{user.full_name}</span>
+        <button className="btn secondary" onClick={onRefreshJobs} disabled={refreshing}>
+          {refreshing ? "Refreshing…" : "Refresh jobs"}
+        </button>
+        <Link className="btn ghost" to="/settings">Settings</Link>
+        <button className="btn ghost" onClick={logout}>
+          Sign out
+        </button>
+      </TopBar>
 
       {sources.length > 0 && (
         <div className="connector-strip">

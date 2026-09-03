@@ -42,6 +42,41 @@ try {
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.waitForURL("**/login");
 
+  // The toggle is checked here, signed out, because that is the one place a
+  // header-only control would have been unreachable. The theme is left on
+  // dark for the rest of the run, so the whole journey renders in dark and
+  // step 13 can prove the choice outlived a sign-out.
+  console.log("1b. Theme toggle: flips, persists, and survives a reload");
+  const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (themeBefore !== "light" && themeBefore !== "dark") {
+    throw new Error(`No theme stamped on <html> before first paint: ${themeBefore}`);
+  }
+  await page.click(".theme-toggle");
+  await page.waitForTimeout(200);
+  const flipped = await page.evaluate(() => ({
+    attr: document.documentElement.dataset.theme,
+    stored: localStorage.getItem("offerly_theme"),
+    pressed: document.querySelector(".theme-toggle")?.getAttribute("aria-pressed"),
+  }));
+  if (flipped.attr === themeBefore) {
+    throw new Error("Clicking the theme toggle did not change data-theme");
+  }
+  if (flipped.stored !== flipped.attr) {
+    throw new Error(`Theme choice was not persisted: stored=${flipped.stored}, active=${flipped.attr}`);
+  }
+  if (flipped.pressed !== String(flipped.attr === "dark")) {
+    throw new Error(`aria-pressed does not track the theme: ${flipped.pressed} for ${flipped.attr}`);
+  }
+  await page.reload({ waitUntil: "networkidle" });
+  if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== flipped.attr) {
+    throw new Error("Theme choice did not survive a reload");
+  }
+  // Whichever way the OS was leaning, finish this step in dark.
+  if (flipped.attr !== "dark") {
+    await page.click(".theme-toggle");
+    await page.waitForTimeout(200);
+  }
+
   console.log("2. Go to register, fill form, submit");
   await page.click("text=Create an account");
   await page.waitForURL("**/register");
@@ -196,8 +231,8 @@ try {
     throw new Error(`Login request did not return 200: ${loginStatuses.join(", ")}`);
   }
   const stored = await page.evaluate(() => ({
-    local: localStorage.getItem("sde_radar_token"),
-    session: sessionStorage.getItem("sde_radar_token"),
+    local: localStorage.getItem("offerly_token"),
+    session: sessionStorage.getItem("offerly_token"),
   }));
   if (stored.local || !stored.session) {
     throw new Error("Unchecked 'keep me signed in' did not confine the token to sessionStorage");
@@ -209,6 +244,47 @@ try {
   if (statusAfterLogin !== "applied") {
     throw new Error("Status did not survive a fresh login");
   }
+
+  // The theme is a device preference, not an account one: clearing the token
+  // on sign-out must not take it with it.
+  console.log("14. Theme survived registration, sign-out and a fresh login");
+  const themeAtEnd = await page.evaluate(() => ({
+    attr: document.documentElement.dataset.theme,
+    stored: localStorage.getItem("offerly_theme"),
+  }));
+  if (themeAtEnd.attr !== "dark" || themeAtEnd.stored !== "dark") {
+    throw new Error(
+      `Theme did not survive the session boundary: attr=${themeAtEnd.attr}, stored=${themeAtEnd.stored}`,
+    );
+  }
+
+  // Renaming the app must not sign anyone out. Put the pre-rename keys back,
+  // drop the new ones, and confirm a reload promotes them -- if it doesn't,
+  // the app bounces to /login and the card wait below times out, which is
+  // exactly the regression this guards.
+  console.log("15. Pre-rename sde_radar_* keys migrate to offerly_*");
+  await page.evaluate(() => {
+    const token = sessionStorage.getItem("offerly_token");
+    sessionStorage.removeItem("offerly_token");
+    sessionStorage.setItem("sde_radar_token", token);
+    localStorage.removeItem("offerly_theme");
+    localStorage.setItem("sde_radar_theme", "dark");
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".card", { timeout: 15000 });
+  const migrated = await page.evaluate(() => ({
+    token: sessionStorage.getItem("offerly_token"),
+    legacyToken: sessionStorage.getItem("sde_radar_token"),
+    theme: localStorage.getItem("offerly_theme"),
+    legacyTheme: localStorage.getItem("sde_radar_theme"),
+    attr: document.documentElement.dataset.theme,
+  }));
+  if (!migrated.token) throw new Error("Legacy token was not carried across the rename");
+  if (migrated.legacyToken) throw new Error("Legacy token key was left behind after migrating");
+  if (migrated.theme !== "dark" || migrated.attr !== "dark") {
+    throw new Error(`Legacy theme did not migrate: stored=${migrated.theme}, active=${migrated.attr}`);
+  }
+  if (migrated.legacyTheme) throw new Error("Legacy theme key was left behind after migrating");
 
   if (consoleErrors.length) console.log("Non-fatal console errors:", consoleErrors);
   console.log("\nSMOKE TEST PASSED");
