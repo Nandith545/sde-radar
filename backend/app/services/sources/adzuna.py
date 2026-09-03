@@ -7,7 +7,7 @@ import logging
 import httpx
 
 from ...config import settings
-from .base import RawJob, first_id
+from .base import RawJob, describe_http_error, first_id
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def fetch(search_terms: list[str], where: str) -> list[RawJob]:
                 resp.raise_for_status()
                 data = resp.json()
             except httpx.HTTPError as exc:
-                logger.warning("[adzuna] request failed for %r: %s", term, exc)
+                logger.warning("[adzuna] request failed for %r: %s", term, describe_http_error(exc))
                 continue
             except ValueError as exc:
                 logger.warning("[adzuna] bad JSON for %r: %s", term, exc)

@@ -5,6 +5,8 @@ listing came from.
 
 from dataclasses import dataclass, field
 
+import httpx
+
 
 @dataclass
 class RawJob:
@@ -58,3 +60,22 @@ def matches_filters(title: str, location: str, terms: list[str], where_tokens: l
     if "remote" in loc:
         return True
     return not (where_tokens and location and not any(tok in loc for tok in where_tokens))
+
+
+def describe_http_error(exc: httpx.HTTPError) -> str:
+    """A log-safe description of a failed request: never the URL.
+
+    httpx puts the full request URL in the message of an HTTPStatusError.
+    Two connectors carry their API key in that URL -- Adzuna as a query
+    parameter, Jooble in the path -- so logging the exception itself writes
+    a live credential into the log stream on any upstream 4xx/5xx. A 429
+    from a free tier is routine, and a log line outlives the incident that
+    produced it, so this renders only the exception type and, where there is
+    one, the status code.
+
+    Use this in any connector rather than logging the exception directly;
+    the next keyed board will have the same problem.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
