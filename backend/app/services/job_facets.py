@@ -212,6 +212,13 @@ _SENIOR_WORDS = (
     "sde2",
     "sde 2",
     "sde iii",
+    # Amazon's own spelled-out form of the same title. Without these,
+    # "SDE II" read senior and "Software Development Engineer II" read mid --
+    # the same req at the same company, eighteen points apart. Generic
+    # "Software Engineer II" is deliberately left as mid: at most employers
+    # that is a mid-level rung, and only Amazon's ladder puts II this high.
+    "software development engineer ii",
+    "software development engineer 2",
     " iii",
     " iv",
     "architect",

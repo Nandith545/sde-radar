@@ -205,3 +205,17 @@ def test_freshness_windows_do_not_offer_an_hour_option() -> None:
     assert "1h" not in FRESHNESS_WINDOWS
     assert set(FRESHNESS_WINDOWS) == {"1d", "7d", "14d", "30d"}
     assert max(FRESHNESS_WINDOWS.values()) == MAX_AGE_DAYS
+
+
+def test_the_two_spellings_of_sde_ii_agree() -> None:
+    """Amazon posts both forms of the same req. "sde ii" was in the senior
+    vocabulary and the spelled-out title was not, so the same job read senior
+    or mid depending on which way the employer abbreviated it -- an
+    eighteen-point swing for a candidate whose level sat one rung away."""
+    assert infer_seniority("SDE II") == infer_seniority("Software Development Engineer II")
+
+
+def test_a_generic_engineer_ii_is_still_mid() -> None:
+    """Only Amazon's ladder puts II that high; elsewhere it is a mid rung,
+    and widening the rule to every "II" would relabel much of the pool."""
+    assert infer_seniority("Software Engineer II") == "mid"
