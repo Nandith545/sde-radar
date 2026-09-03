@@ -481,3 +481,30 @@ def test_an_unrelated_engineering_title_still_does_not_match(make_job) -> None:
     user = _user(target_titles="Software Engineer")
     result = score_job(make_job(title="Sales Engineer", skills=["Python"]), user, resume)
     assert "Title matches" not in result.reason
+
+
+# ---- Location ------------------------------------------------------------
+
+
+def test_a_suburb_of_the_target_city_is_not_a_location_mismatch(make_job) -> None:
+    """Nine of the twenty-three bundled seed postings -- Microsoft, Google,
+    Snap, Alphabet's Intrinsic -- were reported to a Seattle job seeker as
+    being in the wrong place."""
+    user = _user(target_cities=["Seattle, WA"], target_country="united states")
+    for city in ("Bellevue, WA", "Redmond, WA", "Kirkland, WA"):
+        assert preference_mismatch(make_job(location=city), user) is None, city
+
+
+def test_a_suburb_of_the_target_city_earns_the_city_bonus(make_job) -> None:
+    resume = _resume(["Python"])
+    user = _user(target_cities=["Seattle, WA"], target_country="united states")
+    near = score_job(make_job(location="Redmond, WA", skills=["Python"]), user, resume)
+    far = score_job(make_job(location="Spokane, WA", skills=["Python"]), user, resume)
+    assert near.score > far.score
+
+
+def test_a_city_outside_the_metro_is_still_a_mismatch(make_job) -> None:
+    """The fallback must stay narrow: Bremerton is across the Puget Sound."""
+    user = _user(target_cities=["Seattle, WA"], target_country="united states")
+    assert preference_mismatch(make_job(location="Bremerton, WA"), user) is not None
+    assert preference_mismatch(make_job(location="Miami, FL"), user) is not None

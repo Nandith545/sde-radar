@@ -118,15 +118,37 @@ def extract_skills(text: str) -> list[str]:
     return sorted(found)
 
 
+# A years figure only counts when the surrounding text ties it to the
+# candidate's experience. Taking the largest "N years" anywhere in the
+# document -- which is what this did -- read "Acme, founded 30 years ago" as
+# thirty years of experience, and "a 12 years running migration project" as
+# twelve. Both then inferred senior, which penalises every mid-level posting
+# by eight to sixteen points. Taking the maximum made it pick the worst
+# reading available.
+_YEARS_THEN_EXPERIENCE = re.compile(
+    r"(\d{1,2})\s*\+?\s*years?(?:\s+[\w/&-]+){0,4}?\s+experience", re.IGNORECASE
+)
+_EXPERIENCE_THEN_YEARS = re.compile(r"experience[^.\n]{0,40}?(\d{1,2})\s*\+?\s*years?", re.IGNORECASE)
+
+
 def extract_years_experience(text: str) -> float | None:
-    """Best-effort extraction of a stated years-of-experience figure, e.g.
-    '9+ years of experience' -> 9.0. Returns None if nothing plausible found.
+    """A stated years-of-experience figure, e.g. '9+ years of experience'.
+
+    Returns None when nothing anchors a number to the candidate's own
+    experience. That is deliberate rather than a fallback to guessing: an
+    absent reading leaves seniority to the user's stated preference, while a
+    wrong one silently mis-levels every job they see. It is the same
+    fail-quiet stance work mode, country and ambiguous cities already take.
     """
     if not text:
         return None
-    matches = re.findall(r"(\d{1,2})\s*\+?\s*years?", text, re.IGNORECASE)
-    plausible = [int(m) for m in matches if 0 < int(m) <= 45]
-    return float(max(plausible)) if plausible else None
+    found = [
+        int(m)
+        for pattern in (_YEARS_THEN_EXPERIENCE, _EXPERIENCE_THEN_YEARS)
+        for m in pattern.findall(text)
+        if 0 < int(m) <= 45
+    ]
+    return float(max(found)) if found else None
 
 
 def skills_union(skill_lists: Iterable[list[str]]) -> list[str]:

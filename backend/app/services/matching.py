@@ -18,7 +18,7 @@ from .job_facets import (
     seniority_distance,
     seniority_from_years,
 )
-from .regions import infer_subdivision, state_label
+from .regions import infer_subdivision, metro_of, state_label
 
 # Seniority vocabulary now lives in job_facets alongside the other inference.
 # SENIOR_WORDS was declared here and never read by anything.
@@ -124,15 +124,35 @@ def _city_matches(job_location: str, target_city: str) -> bool:
     return any(len(part) > 2 and part in job_l for part in target_city.lower().replace(",", " ").split())
 
 
-def _any_city_matches(job_location: str, target_cities: list[str]) -> bool:
-    """True if the posting is in any of the user's cities.
+def _country_slug(job: JobListing, user: User) -> str:
+    """Which country's metro vocabulary to read the posting against."""
+    if user.target_country:
+        return normalize_country(user.target_country)
+    inferred = infer_country(job.location or "")
+    return "" if inferred == "unknown" else inferred
+
+
+def _any_city_matches(job_location: str, target_cities: list[str], country_slug: str = "") -> bool:
+    """True if the posting is in any of the user's cities, or their metro.
 
     An empty list means no location preference, which matches everything --
     the same thing an empty single city used to mean.
+
+    The metro fallback is the substantive part. Comparing city strings meant
+    a Redmond posting was reported to a Seattle job seeker as being in the
+    wrong place, which is not what anyone means: on the bundled seed pool
+    that flagged nine of twenty-three postings, Microsoft, Google, Snap and
+    Alphabet's Intrinsic among them. A city in no known metro still falls
+    back to the exact comparison.
     """
     if not target_cities:
         return False
-    return any(_city_matches(job_location, city) for city in target_cities)
+    if any(_city_matches(job_location, city) for city in target_cities):
+        return True
+    job_metro = metro_of(country_slug, job_location)
+    if not job_metro:
+        return False
+    return any(metro_of(country_slug, city) == job_metro for city in target_cities)
 
 
 def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult:
@@ -154,7 +174,7 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
     if title_hit:
         score += 12
 
-    if _any_city_matches(job.location, user.target_cities or []):
+    if _any_city_matches(job.location, user.target_cities or [], _country_slug(job, user)):
         score += 8
 
     flag_parts = []
@@ -289,7 +309,7 @@ def preference_mismatch(job: JobListing, user: User) -> str | None:
     # check above has already excluded it.
     if mode != "remote":
         cities = user.target_cities or []
-        if cities and not _any_city_matches(job.location, cities):
+        if cities and not _any_city_matches(job.location, cities, _country_slug(job, user)):
             where = job.location or "somewhere unstated"
             wanted = cities[0] if len(cities) == 1 else f"{', '.join(cities[:-1])} or {cities[-1]}"
             return f"This is in {where}, not {wanted}."

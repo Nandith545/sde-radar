@@ -106,3 +106,24 @@ def test_a_security_clearance_is_not_typescript() -> None:
 def test_background_check_boilerplate_is_not_a_security_skill() -> None:
     assert extract_skills("Offers are contingent on a security background check.") == []
     assert "Security" in extract_skills("OAuth and authorization flows")
+
+
+# ---- Years of experience -------------------------------------------------
+
+
+def test_years_must_be_tied_to_the_candidates_experience() -> None:
+    """Taking the largest "N years" anywhere read a company's founding date
+    as the candidate's career length -- and being a maximum, it picked the
+    worst available reading every time."""
+    assert extract_years_experience("Acme, founded 30 years ago. I worked there 3 years.") is None
+    assert extract_years_experience("Led a 12 years running migration project.") is None
+
+
+def test_years_are_read_in_either_order() -> None:
+    assert extract_years_experience("9+ years of software engineering experience") == 9.0
+    assert extract_years_experience("Experience: 7 years in backend development.") == 7.0
+
+
+def test_nothing_plausible_yields_none() -> None:
+    assert extract_years_experience("No numbers here at all.") is None
+    assert extract_years_experience("") is None
