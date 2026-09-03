@@ -59,10 +59,26 @@ services:
         sync: false
       # Per-company boards. Comma-separated slugs, e.g. "stripe,gitlab".
       # Keyless, so these are the cheapest sources to add -- no quota.
+      #
+      # Set here rather than sync:false because a slug is not a credential --
+      # it is the same public string on the company's own careers URL. Keeping
+      # them in the blueprint makes the production job pool reproducible from
+      # the repo, and means adding a connector cannot be half-done: ASHBY and
+      # SMARTRECRUITERS were added in #34 but never reached this file, so both
+      # boards reported inactive in production and silently contributed
+      # nothing.
       - key: GREENHOUSE_COMPANIES
-        sync: false
+        value: "spacex,anthropic,databricks,okta,stripe,hasbro,nintendo,axon,truveta,pitchbookdata,tanium,smartsheet,zenoti,carta,mongodb,amperity,qualtrics,datadog,adaptivebiotechnologies,extrahopnetworks,esri,lyft,xealth,flexe,pushpay,seekout,instacart,asana,karat,textio,liveperson,bungie"
       - key: LEVER_COMPANIES
-        sync: false
+        value: "rover,outreach,gettyimages,olo"
+      - key: ASHBY_COMPANIES
+        value: "helion,snowflake,openai,qumulo,arenanet"
+      # Boards here run to thousands of reqs, so this connector spends one
+      # search per configured title rather than downloading the board -- which
+      # is why only a slug with a real local presence earns a place. SeekOut
+      # also publishes to Greenhouse; dedup merges the overlap into one row.
+      - key: SMARTRECRUITERS_COMPANIES
+        value: "seekout"
 
   # ---- Staging ----------------------------------------------------------
   - type: web
