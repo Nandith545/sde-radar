@@ -1,4 +1,4 @@
-# Working on SDE Radar
+# Working on Offerly
 
 This is the practical guide to making a change to this project — for you in
 six months, or for anyone you hand the repo to. The short version:

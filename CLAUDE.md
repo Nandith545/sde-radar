@@ -5,7 +5,7 @@ every session.
 
 ## What this is
 
-SDE Radar: a multi-user job-tracking web app. Users register, upload a
+Offerly: a multi-user job-tracking web app. Users register, upload a
 resume, and get a scored, explained list of matching software engineering
 jobs pulled from several job boards, with an application-status pipeline
 (New → Saved → Applied → Interviewing → Offer / Rejected).
@@ -15,6 +15,31 @@ frontend, deployed to Render as a single Docker service where FastAPI serves
 the built React bundle. It's a portfolio project — the repo is public and
 linked from a resume, so code quality and a legible git history matter here
 more than they would for a throwaway.
+
+**The app was renamed from "SDE Radar" to Offerly; the infrastructure was
+not.** Anything a person reads says Offerly. Anything that would cost
+something to rename still says `sde-radar` / `sderadar`, deliberately:
+
+- the Render services and their URLs (`sde-radar.onrender.com`,
+  `sde-radar-staging.onrender.com`) — renaming a Render service changes the
+  public URL, which is on a résumé, and invalidates `RENDER_DEPLOY_HOOK`
+- the Render Postgres instance (`sderadar-db`, user and database `sderadar`)
+  — Render cannot rename one in place, so this means a new instance and a
+  data migration
+- the local dev Postgres (`backend/.env.example`, the `docker run` below,
+  and `verify.sh`'s `PG_ADMIN` / `sderadar_verify`) — matched to whatever
+  container you already have running
+- the GitHub repo (`Nandith545/sde-radar`)
+
+CI's throwaway Postgres names *were* renamed, since those containers are
+built fresh from `ci.yml` on every run and belong to nothing.
+
+Browser storage keys are `offerly_token` / `offerly_theme`. The pre-rename
+`sde_radar_*` keys are read once and promoted, in `api.ts` at module load
+and in `ThemeContext`'s `readStored` — so the rename doesn't sign anyone out
+or reset their theme. `index.html`'s inline script reads both for the same
+reason. Step 15 of the smoke test covers this; drop that migration and it
+fails by bouncing to `/login`.
 
 ## Commands
 
@@ -203,7 +228,7 @@ without discussing the cost tradeoff.
 Most of this was built in a sandbox without Docker or outbound network
 access. Verified locally on 2026-08-27:
 
-- **The Dockerfile builds and runs.** `docker build -t sde-radar .` produces
+- **The Dockerfile builds and runs.** `docker build -t offerly .` produces
   a 638MB image; the container applies migrations, seeds, starts the
   scheduler, and serves the React bundle and API against Postgres 16.
 - **Remotive and Arbeitnow hit their live APIs** and parse into `RawJob`

@@ -107,7 +107,7 @@ export default function Dashboard() {
     <div className="shell">
       <TopBar
         tag={`${user.target_cities.length ? user.target_cities.join(" · ") : "Anywhere"} · Matched to your resume`}
-        heading={<h1>SDE Radar</h1>}
+        heading={<h1>Offerly</h1>}
       >
         <span>{user.full_name}</span>
         <button className="btn secondary" onClick={onRefreshJobs} disabled={refreshing}>

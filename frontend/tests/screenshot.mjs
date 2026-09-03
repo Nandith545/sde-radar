@@ -44,7 +44,7 @@ try {
   // means light and the pairs are comparable run to run.
   await page.addInitScript(() => {
     try {
-      localStorage.setItem("sde_radar_theme", "light");
+      localStorage.setItem("offerly_theme", "light");
     } catch {
       /* storage blocked */
     }

@@ -2,7 +2,7 @@
 
 The score is a transparent, explainable heuristic (not a black box) so the
 frontend can show *why* a job scored the way it did -- this mirrors how the
-single-user SDE Radar prototype presented its matches.
+original single-user prototype presented its matches.
 """
 
 from dataclasses import dataclass

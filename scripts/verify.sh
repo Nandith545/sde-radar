@@ -44,9 +44,9 @@ cleanup() {
   fi
   if [ $code -ne 0 ]; then
     printf "\n%s✗ VERIFY FAILED%s — fix the above before pushing.\n" "$RED$BOLD" "$RESET"
-    if [ -f /tmp/sde-radar-verify-server.log ]; then
+    if [ -f /tmp/offerly-verify-server.log ]; then
       printf "\n%sLast 30 lines of server log:%s\n" "$DIM" "$RESET"
-      tail -30 /tmp/sde-radar-verify-server.log
+      tail -30 /tmp/offerly-verify-server.log
     fi
   fi
 }
@@ -105,7 +105,7 @@ else
     DB_KIND="pg"
     ok "Using scratch Postgres (matches CI and production)"
   else
-    SQLITE_FILE="$(mktemp -t sde-radar-verify-XXXXXX.db)"
+    SQLITE_FILE="$(mktemp -t offerly-verify-XXXXXX.db)"
     rm -f "$SQLITE_FILE"
     DB_URL="sqlite:///$SQLITE_FILE"
     DB_KIND="sqlite"
@@ -194,7 +194,7 @@ else
   UVICORN="uvicorn"
 fi
 
-"$UVICORN" app.main:app --port 8000 > /tmp/sde-radar-verify-server.log 2>&1 &
+"$UVICORN" app.main:app --port 8000 > /tmp/offerly-verify-server.log 2>&1 &
 SERVER_PID=$!
 
 for i in $(seq 1 30); do
@@ -227,11 +227,11 @@ if [ "${SCREENSHOTS:-1}" = "1" ]; then
   mkdir -p "$REPO_ROOT/.verify-artifacts"
   if BASE_URL=http://localhost:8000 \
      OUT_DIR="$REPO_ROOT/.verify-artifacts" \
-     node tests/screenshot.mjs > /tmp/sde-radar-verify-shots.log 2>&1; then
+     node tests/screenshot.mjs > /tmp/offerly-verify-shots.log 2>&1; then
     ok "Screenshots written to .verify-artifacts/"
   else
     warn "Screenshot capture failed (not fatal) — reason:"
-    tail -5 /tmp/sde-radar-verify-shots.log | sed 's/^/      /'
+    tail -5 /tmp/offerly-verify-shots.log | sed 's/^/      /'
   fi
 fi
 

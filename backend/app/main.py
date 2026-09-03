@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
 
 
-app = FastAPI(title="SDE Radar", lifespan=lifespan)
+app = FastAPI(title="Offerly", lifespan=lifespan)
 
 origins = ["*"] if settings.cors_origins == "*" else [o.strip() for o in settings.cors_origins.split(",")]
 app.add_middleware(

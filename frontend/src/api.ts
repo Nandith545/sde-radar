@@ -1,4 +1,20 @@
-const TOKEN_KEY = "sde_radar_token";
+const TOKEN_KEY = "offerly_token";
+/** The pre-rename key. Carried across once, on load, so renaming the app
+ *  doesn't sign everybody out; it deletes itself in the process, so the
+ *  legacy key is gone from a browser after a single visit. */
+const LEGACY_TOKEN_KEY = "sde_radar_token";
+
+try {
+  for (const store of [localStorage, sessionStorage]) {
+    const legacy = store.getItem(LEGACY_TOKEN_KEY);
+    if (!legacy) continue;
+    // Only fill a gap: a token issued under the new name always wins.
+    if (!store.getItem(TOKEN_KEY)) store.setItem(TOKEN_KEY, legacy);
+    store.removeItem(LEGACY_TOKEN_KEY);
+  }
+} catch {
+  /* storage blocked -- the user just signs in again */
+}
 
 // "Remember me" is the choice between the two web storages, not a longer
 // token: localStorage outlives the browser session, sessionStorage dies with

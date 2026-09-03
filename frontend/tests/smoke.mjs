@@ -55,7 +55,7 @@ try {
   await page.waitForTimeout(200);
   const flipped = await page.evaluate(() => ({
     attr: document.documentElement.dataset.theme,
-    stored: localStorage.getItem("sde_radar_theme"),
+    stored: localStorage.getItem("offerly_theme"),
     pressed: document.querySelector(".theme-toggle")?.getAttribute("aria-pressed"),
   }));
   if (flipped.attr === themeBefore) {
@@ -231,8 +231,8 @@ try {
     throw new Error(`Login request did not return 200: ${loginStatuses.join(", ")}`);
   }
   const stored = await page.evaluate(() => ({
-    local: localStorage.getItem("sde_radar_token"),
-    session: sessionStorage.getItem("sde_radar_token"),
+    local: localStorage.getItem("offerly_token"),
+    session: sessionStorage.getItem("offerly_token"),
   }));
   if (stored.local || !stored.session) {
     throw new Error("Unchecked 'keep me signed in' did not confine the token to sessionStorage");
@@ -250,13 +250,41 @@ try {
   console.log("14. Theme survived registration, sign-out and a fresh login");
   const themeAtEnd = await page.evaluate(() => ({
     attr: document.documentElement.dataset.theme,
-    stored: localStorage.getItem("sde_radar_theme"),
+    stored: localStorage.getItem("offerly_theme"),
   }));
   if (themeAtEnd.attr !== "dark" || themeAtEnd.stored !== "dark") {
     throw new Error(
       `Theme did not survive the session boundary: attr=${themeAtEnd.attr}, stored=${themeAtEnd.stored}`,
     );
   }
+
+  // Renaming the app must not sign anyone out. Put the pre-rename keys back,
+  // drop the new ones, and confirm a reload promotes them -- if it doesn't,
+  // the app bounces to /login and the card wait below times out, which is
+  // exactly the regression this guards.
+  console.log("15. Pre-rename sde_radar_* keys migrate to offerly_*");
+  await page.evaluate(() => {
+    const token = sessionStorage.getItem("offerly_token");
+    sessionStorage.removeItem("offerly_token");
+    sessionStorage.setItem("sde_radar_token", token);
+    localStorage.removeItem("offerly_theme");
+    localStorage.setItem("sde_radar_theme", "dark");
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".card", { timeout: 15000 });
+  const migrated = await page.evaluate(() => ({
+    token: sessionStorage.getItem("offerly_token"),
+    legacyToken: sessionStorage.getItem("sde_radar_token"),
+    theme: localStorage.getItem("offerly_theme"),
+    legacyTheme: localStorage.getItem("sde_radar_theme"),
+    attr: document.documentElement.dataset.theme,
+  }));
+  if (!migrated.token) throw new Error("Legacy token was not carried across the rename");
+  if (migrated.legacyToken) throw new Error("Legacy token key was left behind after migrating");
+  if (migrated.theme !== "dark" || migrated.attr !== "dark") {
+    throw new Error(`Legacy theme did not migrate: stored=${migrated.theme}, active=${migrated.attr}`);
+  }
+  if (migrated.legacyTheme) throw new Error("Legacy theme key was left behind after migrating");
 
   if (consoleErrors.length) console.log("Non-fatal console errors:", consoleErrors);
   console.log("\nSMOKE TEST PASSED");

@@ -1,6 +1,6 @@
 """Fallback job pool used when no job-board connector is configured, so the
 app is fully demoable out of the box. These are the same Seattle-area
-postings gathered for the original single-user SDE Radar prototype.
+postings gathered for the original single-user prototype.
 """
 
 from typing import TypedDict

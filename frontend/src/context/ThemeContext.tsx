@@ -2,7 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 export type Theme = "light" | "dark";
 
-const THEME_KEY = "sde_radar_theme";
+const THEME_KEY = "offerly_theme";
+/** The pre-rename key, carried across so the rename doesn't reset anyone's
+ *  theme. The inline script in index.html reads both for the same reason. */
+const LEGACY_THEME_KEY = "sde_radar_theme";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /** Storage is unavailable in Safari private mode and throws rather than
@@ -10,7 +13,16 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
  *  theme is a nicety -- it must never be the thing that breaks the app. */
 function readStored(): Theme | null {
   try {
-    const raw = localStorage.getItem(THEME_KEY);
+    let raw = localStorage.getItem(THEME_KEY);
+    if (raw === null) {
+      // Fall back to the pre-rename key, and promote it so this only
+      // happens once.
+      raw = localStorage.getItem(LEGACY_THEME_KEY);
+      if (raw !== null) {
+        localStorage.setItem(THEME_KEY, raw);
+        localStorage.removeItem(LEGACY_THEME_KEY);
+      }
+    }
     return raw === "light" || raw === "dark" ? raw : null;
   } catch {
     return null;

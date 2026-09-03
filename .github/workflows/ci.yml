@@ -33,9 +33,9 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: sderadar
+          POSTGRES_USER: offerly
           POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: sderadar_test
+          POSTGRES_DB: offerly_test
         ports:
           - 5432:5432
         # Don't start the test job until Postgres is actually accepting
@@ -47,7 +47,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://sderadar:testpassword@localhost:5432/sderadar_test
+      DATABASE_URL: postgresql://offerly:testpassword@localhost:5432/offerly_test
       JWT_SECRET: ci-test-secret-not-used-in-production
 
     steps:
@@ -134,9 +134,9 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: sderadar
+          POSTGRES_USER: offerly
           POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: sderadar_e2e
+          POSTGRES_DB: offerly_e2e
         ports:
           - 5432:5432
         options: >-
@@ -146,7 +146,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://sderadar:testpassword@localhost:5432/sderadar_e2e
+      DATABASE_URL: postgresql://offerly:testpassword@localhost:5432/offerly_e2e
       JWT_SECRET: ci-test-secret-not-used-in-production
 
     steps:

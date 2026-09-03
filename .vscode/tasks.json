@@ -46,7 +46,7 @@
     {
       "label": "Docker: build image",
       "type": "shell",
-      "command": "docker build -t sde-radar .",
+      "command": "docker build -t offerly .",
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": []
     }

@@ -47,7 +47,7 @@ export default function Register() {
     <div className="auth-wrap">
       <ThemeToggle />
       <div className="auth-card">
-        <h1>SDE Radar</h1>
+        <h1>Offerly</h1>
         <p className="sub">Create your account — resume-matched jobs in under a minute.</p>
         {error && <div className="form-error" role="alert">{error}</div>}
         <form onSubmit={onSubmit} noValidate>
