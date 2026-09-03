@@ -70,3 +70,39 @@ def test_parse_resume_tolerates_undecodable_bytes() -> None:
     parsed = parse_resume("resume.txt", b"\xff\xfe\x00Python\x00")
     assert isinstance(parsed["raw_text"], str)
     assert isinstance(parsed["skills"], list)
+
+
+# ---- Words that are skills only in the right shape ----------------------
+
+
+def test_english_verbs_are_not_programming_languages() -> None:
+    """The aliases were written " go " and " rag " to force a word boundary,
+    but the compiler stripped the padding, so ordinary prose tagged both."""
+    assert extract_skills("We go above and beyond. Please go to our careers page.") == []
+    assert extract_skills("Bring a rag and elbow grease.") == []
+
+
+def test_go_is_still_found_when_it_is_the_language() -> None:
+    assert "Go" in extract_skills("Experience with Go and Java")
+    assert "Go" in extract_skills("golang microservices")
+
+
+def test_rag_and_ml_are_found_when_capitalised() -> None:
+    assert "RAG" in extract_skills("RAG pipelines over a vector store")
+    assert "Machine Learning" in extract_skills("ML infrastructure")
+    assert extract_skills("Pipetting 50 ml samples") == []
+
+
+def test_lambda_in_a_language_sense_is_not_aws() -> None:
+    assert extract_skills("Comfortable with lambda expressions in Java") == ["Java"]
+
+
+def test_a_security_clearance_is_not_typescript() -> None:
+    """SpaceX and Axon both post cleared roles; "TS/SCI" tagged every one of
+    them as a TypeScript job."""
+    assert extract_skills("Must hold an active TS/SCI clearance.") == []
+
+
+def test_background_check_boilerplate_is_not_a_security_skill() -> None:
+    assert extract_skills("Offers are contingent on a security background check.") == []
+    assert "Security" in extract_skills("OAuth and authorization flows")

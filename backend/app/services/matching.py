@@ -5,6 +5,7 @@ frontend can show *why* a job scored the way it did -- this mirrors how the
 original single-user prototype presented its matches.
 """
 
+import re
 from dataclasses import dataclass
 
 from ..models import JobListing, Resume, User
@@ -22,6 +23,91 @@ from .regions import infer_subdivision, state_label
 # Seniority vocabulary now lives in job_facets alongside the other inference.
 # SENIOR_WORDS was declared here and never read by anything.
 PART_TIME_WORDS = ["part-time", "part time", "contract", "contractor", "temporary", "gig"]
+
+# Skill scoring. The ratio term rewards meeting a posting's stated
+# requirements; the overlap term rewards absolute depth of match. The ratio
+# used to be worth twice the overlap, which inverted the ranking: a posting
+# listing two requirements you both met scored 95, while one listing twenty
+# of which you met eight scored 80. Four times the matched skills, fifteen
+# points worse. Capping the denominator and moving weight onto the overlap
+# term fixes that without making a terse posting worthless.
+COVERAGE_CAP = 8  # requirements past this neither help nor hurt
+SKILL_RATIO_WEIGHT = 40
+SKILL_OVERLAP_WEIGHT = 4.5
+SKILL_OVERLAP_CAP = 10
+
+# What the skill term is worth when a posting carries no description to tag,
+# so there is nothing to compare against. SmartRecruiters emits postings past
+# MAX_DETAIL_FETCHES with no description at all, and Adzuna and Jooble return
+# short snippets. Scoring those zero buries them for a reason that is about
+# our ingestion rather than the job; this leaves them ranked on title,
+# location and seniority alone.
+UNTAGGED_SKILL_BASELINE = 34
+
+# Level words are stripped before comparing titles -- seniority has its own
+# term below, and "Senior Backend Engineer" should still match a stated
+# interest in "Backend Engineer".
+_TITLE_LEVEL_WORDS = {
+    "senior",
+    "sr",
+    "staff",
+    "principal",
+    "lead",
+    "junior",
+    "jr",
+    "entry",
+    "mid",
+    "level",
+    "associate",
+    "i",
+    "ii",
+    "iii",
+    "iv",
+    "v",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+}
+
+_TITLE_SYNONYMS = {
+    "developer": "engineer",
+    "dev": "engineer",
+    "engineering": "engineer",
+    "programmer": "engineer",
+    "sde": "software engineer",
+    "swe": "software engineer",
+    "fullstack": "full stack",
+}
+
+
+def _title_tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9+#.]+", (text or "").lower())
+    out: list[str] = []
+    for word in words:
+        out.extend(_TITLE_SYNONYMS.get(word, word).split())
+    return {w for w in out if w not in _TITLE_LEVEL_WORDS}
+
+
+def _title_matches(job_title: str, target_titles: list[str]) -> bool:
+    """Whether the posting is one of the roles the user asked for.
+
+    Substring matching was the whole test before, so "Software Engineer"
+    missed "Software Development Engineer II", "SDE II" and "Backend
+    Developer" -- three of the commonest ways this pool spells the job the
+    user actually wants. Compare token sets instead, after folding
+    developer/engineer and expanding SDE/SWE, and require the target's tokens
+    to all appear so "Software Engineer" still doesn't match "Sales Engineer".
+    """
+    job_tokens = _title_tokens(job_title)
+    if not job_tokens:
+        return False
+    for target in target_titles:
+        wanted = _title_tokens(target)
+        if wanted and wanted <= job_tokens:
+            return True
+    return False
 
 
 @dataclass
@@ -56,13 +142,15 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
     overlap = resume_skills & job_skills
     overlap_count = len(overlap)
 
-    coverage = overlap_count / len(job_skills) if job_skills else 0.0
-
-    score = coverage * 65 + min(overlap_count, 8) * 4
+    if job_skills:
+        coverage = min(overlap_count / min(len(job_skills), COVERAGE_CAP), 1.0)
+        score = coverage * SKILL_RATIO_WEIGHT + min(overlap_count, SKILL_OVERLAP_CAP) * SKILL_OVERLAP_WEIGHT
+    else:
+        score = float(UNTAGGED_SKILL_BASELINE)
 
     title_l = (job.title or "").lower()
-    target_titles = [t.strip().lower() for t in (user.target_titles or "").split(",") if t.strip()]
-    title_hit = any(t in title_l for t in target_titles) if target_titles else False
+    target_titles = [t.strip() for t in (user.target_titles or "").split(",") if t.strip()]
+    title_hit = _title_matches(job.title or "", target_titles) if target_titles else False
     if title_hit:
         score += 12
 
