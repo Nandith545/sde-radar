@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../api";
 import PasswordField from "../components/PasswordField";
+import ThemeToggle from "../components/ThemeToggle";
 
 // Deliberately permissive: the backend's email-validator is the authority.
 // This only catches the obvious "no @ at all" case while typing, so the
@@ -41,6 +42,7 @@ export default function Login() {
 
   return (
     <div className="auth-wrap">
+      <ThemeToggle />
       <div className="auth-card">
         <h1>SDE Radar</h1>
         <p className="sub">Sign in to your job pipeline.</p>

@@ -42,6 +42,41 @@ try {
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.waitForURL("**/login");
 
+  // The toggle is checked here, signed out, because that is the one place a
+  // header-only control would have been unreachable. The theme is left on
+  // dark for the rest of the run, so the whole journey renders in dark and
+  // step 13 can prove the choice outlived a sign-out.
+  console.log("1b. Theme toggle: flips, persists, and survives a reload");
+  const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (themeBefore !== "light" && themeBefore !== "dark") {
+    throw new Error(`No theme stamped on <html> before first paint: ${themeBefore}`);
+  }
+  await page.click(".theme-toggle");
+  await page.waitForTimeout(200);
+  const flipped = await page.evaluate(() => ({
+    attr: document.documentElement.dataset.theme,
+    stored: localStorage.getItem("sde_radar_theme"),
+    pressed: document.querySelector(".theme-toggle")?.getAttribute("aria-pressed"),
+  }));
+  if (flipped.attr === themeBefore) {
+    throw new Error("Clicking the theme toggle did not change data-theme");
+  }
+  if (flipped.stored !== flipped.attr) {
+    throw new Error(`Theme choice was not persisted: stored=${flipped.stored}, active=${flipped.attr}`);
+  }
+  if (flipped.pressed !== String(flipped.attr === "dark")) {
+    throw new Error(`aria-pressed does not track the theme: ${flipped.pressed} for ${flipped.attr}`);
+  }
+  await page.reload({ waitUntil: "networkidle" });
+  if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== flipped.attr) {
+    throw new Error("Theme choice did not survive a reload");
+  }
+  // Whichever way the OS was leaning, finish this step in dark.
+  if (flipped.attr !== "dark") {
+    await page.click(".theme-toggle");
+    await page.waitForTimeout(200);
+  }
+
   console.log("2. Go to register, fill form, submit");
   await page.click("text=Create an account");
   await page.waitForURL("**/register");
@@ -208,6 +243,19 @@ try {
   const statusAfterLogin = await page.$eval(".status-select", (el) => el.value);
   if (statusAfterLogin !== "applied") {
     throw new Error("Status did not survive a fresh login");
+  }
+
+  // The theme is a device preference, not an account one: clearing the token
+  // on sign-out must not take it with it.
+  console.log("14. Theme survived registration, sign-out and a fresh login");
+  const themeAtEnd = await page.evaluate(() => ({
+    attr: document.documentElement.dataset.theme,
+    stored: localStorage.getItem("sde_radar_theme"),
+  }));
+  if (themeAtEnd.attr !== "dark" || themeAtEnd.stored !== "dark") {
+    throw new Error(
+      `Theme did not survive the session boundary: attr=${themeAtEnd.attr}, stored=${themeAtEnd.stored}`,
+    );
   }
 
   if (consoleErrors.length) console.log("Non-fatal console errors:", consoleErrors);

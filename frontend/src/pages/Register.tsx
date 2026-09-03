@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../api";
 import PasswordField from "../components/PasswordField";
+import ThemeToggle from "../components/ThemeToggle";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Mirrors schemas.py: Field(min_length=8, max_length=128). Kept in sync by
@@ -44,6 +45,7 @@ export default function Register() {
 
   return (
     <div className="auth-wrap">
+      <ThemeToggle />
       <div className="auth-card">
         <h1>SDE Radar</h1>
         <p className="sub">Create your account — resume-matched jobs in under a minute.</p>
