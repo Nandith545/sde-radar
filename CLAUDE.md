@@ -243,20 +243,35 @@ access. Verified locally on 2026-08-27:
 - **Adzuna is configured in production** and reports active on
   `/api/sources`.
 
-- **Greenhouse and Lever were verified live** (Stripe returns 127 jobs,
-  Gopuff's Lever board parses cleanly), which the original four connectors
-  never were at build time. Both are per-company: set `GREENHOUSE_COMPANIES`
-  / `LEVER_COMPANIES` to comma-separated slugs. Keyless, so no quota.
+- **All four per-company boards were verified live on 2026-09-03**, every
+  configured slug returning 200 with postings. They are keyless, so no quota.
+
+  **Their slugs live in `render.yaml`, not in the Render dashboard.** For the
+  first months of production all four reported `active: false` and the pool
+  never held one of their postings: `GREENHOUSE_COMPANIES` and
+  `LEVER_COMPANIES` were declared `sync: false` and never set by hand, and
+  `ASHBY_COMPANIES` / `SMARTRECRUITERS_COMPANIES` were not in the blueprint
+  at all -- the connectors shipped without it. A slug is not a credential, so
+  they are literal values now and adding a board cannot be half-done.
+
+  Nothing about that failure was visible: `is_configured()` is false on an
+  empty list, so the orchestrator skips the connector with no fetch, no error
+  and no log line. `/api/sources` is the only place it shows.
+
+  Pick slugs for what they can actually return. A board contributes only
+  postings that pass `matches_filters` -- a WA location *or* remote, since
+  remote passes regardless of city. `elastic` and `figma` were dropped for
+  failing that: 361 and 160 reqs downloaded per refresh, none reachable.
 
 Still unverified:
 
-- **The Jooble connector has never hit a live API.** No `JOOBLE_API_KEY` is
-  set, so `is_configured()` returns False and it's skipped entirely. The
-  respx tests assert it parses Jooble's *documented* response shape, which
-  is not the same as the live API still returning it. When you add a key,
-  hit `POST /api/jobs/refresh` and watch the logs — a drifted shape yields
-  zero Jooble jobs rather than an error, because per-listing parsing is
-  wrapped in try/except.
+- **Jooble is configured in production** — `/api/sources` reported it active
+  on 2026-09-03 — but its live response has never been eyeballed. The respx
+  tests assert it parses Jooble's *documented* shape, which is not the same
+  as the live API still returning it. A drifted shape yields zero Jooble
+  jobs rather than an error, because per-listing parsing is wrapped in
+  try/except, so the check is `POST /api/jobs/refresh` and then counting
+  Jooble rows — not watching for a failure that will never come.
 - **Adzuna is configured but its live response has never been eyeballed.**
   Same failure mode: it degrades quietly rather than failing loudly.
 
