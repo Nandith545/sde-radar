@@ -26,6 +26,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests legitimately use asserts, magic values, and long literal fixtures.
 "tests/**" = ["T20"]
+# scripts/ holds command-line tools whose whole job is to print a report.
+"scripts/**" = ["T20"]
 
 [tool.ruff.format]
 quote-style = "double"

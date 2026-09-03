@@ -1,0 +1,51 @@
+{
+  "name": "Senior React/TypeScript frontend engineer, Seattle",
+  "notes": [
+    "A second profile over the same pool. Its job is to check whether a",
+    "conclusion drawn from seattle_backend.json is about the scorer or just",
+    "about that one candidate -- two theories have already died on a single",
+    "scenario, and one scenario cannot tell those apart.",
+    "",
+    "Same 0/1/2 scale as the backend scenario. Note how differently the pool",
+    "grades: the backend roles that scored 2 there are 0 here."
+  ],
+  "profile": {
+    "target_titles": "Frontend Engineer, Software Engineer, Full Stack Engineer",
+    "target_cities": ["Seattle, WA"],
+    "target_country": "united states",
+    "target_states": ["WA"],
+    "work_mode": "",
+    "seniority": "senior",
+    "min_salary": null,
+    "resume_skills": [
+      "React", "TypeScript", "JavaScript", "Node.js", "HTML/CSS", "GraphQL",
+      "REST APIs", "Git", "CI/CD", "AWS", "Docker", "Vue"
+    ],
+    "years_experience": 8
+  },
+  "labels": {
+    "seed-blue-origin-swe3-applied-ai": 2,
+    "seed-adobe-senior-sde5-express": 2,
+    "seed-readai-senior-fullstack": 2,
+    "seed-zoox-senior-staff-fs-ops": 2,
+    "seed-finvari-frontend-fullstack": 2,
+    "seed-blue-origin-swe3-generic": 1,
+    "seed-microsoft-swe-generic": 1,
+    "seed-cisco-swe-generic": 1,
+    "seed-adobe-sde-generic": 1,
+    "seed-maincode-swe": 1,
+    "seed-intrinsic-senior-fullstack": 1,
+    "seed-snap-backend-l5-ads": 0,
+    "seed-socure-senior-backend-docv": 0,
+    "seed-microsoft-agentic-dev-productivity": 0,
+    "seed-google-staff-swe-aiml": 0,
+    "seed-globenet-lead-java-aws": 0,
+    "seed-google-fde-geo-auto": 0,
+    "seed-deloitte-lead-pfde-fsi": 0,
+    "seed-orchard-fde-robotics": 0,
+    "seed-surgeai-rl-trainer-renton": 0,
+    "seed-dataannotation-staff-trainer": 0,
+    "seed-phoenixgroup-datascientist-aieng": 0,
+    "seed-retaillockbox-jr-fullstack": 0
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "Mid-level Python/FastAPI backend engineer, Seattle",
+  "notes": [
+    "Relevance grades are a starting judgement, not ground truth. Edit them.",
+    "The point of this file is that tuning the scorer becomes measurable:",
+    "change a weight, re-run, see whether nDCG moved. Without it, weight",
+    "tuning is guesswork that feels like progress.",
+    "",
+    "2 = strong fit: a backend or full-stack build role on a stack this",
+    "    candidate works in, at roughly the right level.",
+    "1 = plausible: still a software engineering role, but the wrong stack,",
+    "    the wrong level, or too vague to tell.",
+    "0 = poor: not a software-building role for this candidate at all --",
+    "    solutions consulting, data science, field robotics, part-time",
+    "    contract work, or junior."
+  ],
+  "profile": {
+    "target_titles": "Software Engineer, Backend Engineer",
+    "target_cities": ["Seattle, WA"],
+    "target_country": "united states",
+    "target_states": ["WA"],
+    "work_mode": "",
+    "seniority": "mid",
+    "min_salary": null,
+    "resume_skills": [
+      "Python", "FastAPI", "PostgreSQL", "SQL", "Docker", "Kubernetes",
+      "AWS", "REST APIs", "Kafka", "Microservices", "CI/CD", "Git",
+      "React", "TypeScript", "Distributed Systems"
+    ],
+    "years_experience": 5
+  },
+  "labels": {
+    "seed-blue-origin-swe3-applied-ai": 2,
+    "seed-snap-backend-l5-ads": 2,
+    "seed-socure-senior-backend-docv": 2,
+    "seed-readai-senior-fullstack": 2,
+    "seed-microsoft-agentic-dev-productivity": 2,
+    "seed-microsoft-swe-generic": 2,
+    "seed-adobe-senior-sde5-express": 1,
+    "seed-google-staff-swe-aiml": 1,
+    "seed-globenet-lead-java-aws": 1,
+    "seed-zoox-senior-staff-fs-ops": 1,
+    "seed-finvari-frontend-fullstack": 1,
+    "seed-blue-origin-swe3-generic": 1,
+    "seed-cisco-swe-generic": 1,
+    "seed-adobe-sde-generic": 1,
+    "seed-maincode-swe": 1,
+    "seed-intrinsic-senior-fullstack": 1,
+    "seed-google-fde-geo-auto": 0,
+    "seed-deloitte-lead-pfde-fsi": 0,
+    "seed-orchard-fde-robotics": 0,
+    "seed-surgeai-rl-trainer-renton": 0,
+    "seed-dataannotation-staff-trainer": 0,
+    "seed-phoenixgroup-datascientist-aieng": 0,
+    "seed-retaillockbox-jr-fullstack": 0
+  }
+}

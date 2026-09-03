@@ -10,6 +10,7 @@ from app.services.regions import (
     COUNTRIES,
     infer_subdivision,
     locate,
+    metro_of,
     state_label,
     subdivision_from_postal,
 )
@@ -265,3 +266,44 @@ def test_postal_lookup_returns_the_state_and_its_cities(client: TestClient, regi
 def test_an_unresolvable_postal_lookup_is_a_404(client: TestClient, registered_user: dict) -> None:
     response = client.get("/api/regions/germany/postal/80331", headers=registered_user["headers"])
     assert response.status_code == 404
+
+
+# ---- Commute markets ----------------------------------------------------
+
+
+def test_seattle_suburbs_share_a_metro() -> None:
+    """The whole point: a Redmond posting is not "not Seattle" to anyone
+    actually job-hunting here."""
+    metro = metro_of("united states", "Seattle, WA")
+    assert metro
+    for city in ("Bellevue, WA", "Redmond, WA", "Kirkland, WA", "Renton, WA", "Bothell, WA"):
+        assert metro_of("united states", city) == metro, city
+
+
+def test_a_metro_can_span_subdivisions() -> None:
+    """Delhi NCR covers Delhi, Haryana and Uttar Pradesh, so a state-level
+    rule could not have expressed it."""
+    ncr = metro_of("india", "New Delhi")
+    assert ncr
+    assert metro_of("india", "Noida") == ncr
+    assert metro_of("india", "Gurugram, Haryana") == ncr
+
+
+def test_somewhere_outside_any_metro_is_unknown() -> None:
+    """Bremerton is across the Puget Sound -- a ferry, not a commute -- and
+    an unknown location must fall back to the exact match rather than being
+    quietly folded into the nearest city."""
+    assert metro_of("united states", "Bremerton, WA") == ""
+    assert metro_of("united states", "Spokane, WA") == ""
+
+
+def test_ambiguous_city_names_are_left_out_of_the_metro_index() -> None:
+    """Portland is in Oregon and Maine, and this index is keyed by country
+    only -- so including it would file Portland, Maine postings in the Oregon
+    commute market. Same reasoning the city index already applies."""
+    assert metro_of("united states", "Portland, OR") == ""
+
+
+def test_an_unknown_country_has_no_metros() -> None:
+    assert metro_of("", "Seattle, WA") == ""
+    assert metro_of("atlantis", "Seattle, WA") == ""

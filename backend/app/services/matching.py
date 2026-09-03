@@ -18,10 +18,61 @@ from .job_facets import (
     seniority_distance,
     seniority_from_years,
 )
-from .regions import infer_subdivision, state_label
+from .regions import infer_subdivision, metro_of, state_label
 
 # Seniority vocabulary now lives in job_facets alongside the other inference.
 # SENIOR_WORDS was declared here and never read by anything.
+# Job families that are not a software-building role, however much their
+# description reads like one. A Forward Deployed Engineer post lists the same
+# technologies as a backend req, so skill overlap scores it like one -- on the
+# seed pool two of them ranked 8th and 9th for a backend candidate, above real
+# backend work, and an AI-annotation post ranked 9th for a frontend one.
+#
+# Phrases, not words: "support engineer" is a different job from a backend
+# req that mentions supporting a service, and bare "implementation" appears
+# in plenty of ordinary engineering prose.
+#
+# Only ever applied when the user has not asked for that family themselves --
+# someone targeting "Data Scientist" should not be penalised for being shown
+# one.
+NON_BUILD_ROLE_MARKERS = (
+    "forward deployed",
+    "solutions engineer",
+    "solution engineer",
+    "sales engineer",
+    "presales",
+    "pre-sales",
+    "data scientist",
+    "ai trainer",
+    "ai tutor",
+    "annotator",
+    "annotation",
+    "support engineer",
+    "technical support",
+    "implementation engineer",
+    "implementation & support",
+    "implementation and support",
+    "customer engineer",
+    "technical account",
+    "developer advocate",
+    "developer relations",
+)
+# Sized against both scenarios: the metric is flat from 10 upward (the
+# penalty only has to push these out of the top ten) but inversions keep
+# falling until 30 and then stop, so 30 is the knee rather than a guess.
+NON_BUILD_PENALTY = 30
+
+
+def _non_build_family(title: str, target_titles: list[str]) -> str:
+    """The non-building job family this title belongs to, or "" if none."""
+    text = (title or "").lower()
+    wanted = " ".join(target_titles).lower()
+    for marker in NON_BUILD_ROLE_MARKERS:
+        if marker in text and marker not in wanted:
+            return marker
+    return ""
+
+
 PART_TIME_WORDS = ["part-time", "part time", "contract", "contractor", "temporary", "gig"]
 
 # Skill scoring. The ratio term rewards meeting a posting's stated
@@ -124,15 +175,35 @@ def _city_matches(job_location: str, target_city: str) -> bool:
     return any(len(part) > 2 and part in job_l for part in target_city.lower().replace(",", " ").split())
 
 
-def _any_city_matches(job_location: str, target_cities: list[str]) -> bool:
-    """True if the posting is in any of the user's cities.
+def _country_slug(job: JobListing, user: User) -> str:
+    """Which country's metro vocabulary to read the posting against."""
+    if user.target_country:
+        return normalize_country(user.target_country)
+    inferred = infer_country(job.location or "")
+    return "" if inferred == "unknown" else inferred
+
+
+def _any_city_matches(job_location: str, target_cities: list[str], country_slug: str = "") -> bool:
+    """True if the posting is in any of the user's cities, or their metro.
 
     An empty list means no location preference, which matches everything --
     the same thing an empty single city used to mean.
+
+    The metro fallback is the substantive part. Comparing city strings meant
+    a Redmond posting was reported to a Seattle job seeker as being in the
+    wrong place, which is not what anyone means: on the bundled seed pool
+    that flagged nine of twenty-three postings, Microsoft, Google, Snap and
+    Alphabet's Intrinsic among them. A city in no known metro still falls
+    back to the exact comparison.
     """
     if not target_cities:
         return False
-    return any(_city_matches(job_location, city) for city in target_cities)
+    if any(_city_matches(job_location, city) for city in target_cities):
+        return True
+    job_metro = metro_of(country_slug, job_location)
+    if not job_metro:
+        return False
+    return any(metro_of(country_slug, city) == job_metro for city in target_cities)
 
 
 def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult:
@@ -154,7 +225,7 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
     if title_hit:
         score += 12
 
-    if _any_city_matches(job.location, user.target_cities or []):
+    if _any_city_matches(job.location, user.target_cities or [], _country_slug(job, user)):
         score += 8
 
     flag_parts = []
@@ -201,6 +272,11 @@ def score_job(job: JobListing, user: User, resume: Resume | None) -> MatchResult
             else:
                 score -= 12
                 flag_parts.append(f"This is in {state_label(country, job_state)}, which you didn't select.")
+    non_build = _non_build_family(job.title or "", target_titles)
+    if non_build:
+        score -= NON_BUILD_PENALTY
+        flag_parts.append(f"This reads like a {non_build} role rather than a software engineering one.")
+
     if any(w in title_l for w in PART_TIME_WORDS) or (job.job_type or "").lower() in (
         "part-time",
         "contract",
@@ -289,7 +365,7 @@ def preference_mismatch(job: JobListing, user: User) -> str | None:
     # check above has already excluded it.
     if mode != "remote":
         cities = user.target_cities or []
-        if cities and not _any_city_matches(job.location, cities):
+        if cities and not _any_city_matches(job.location, cities, _country_slug(job, user)):
             where = job.location or "somewhere unstated"
             wanted = cities[0] if len(cities) == 1 else f"{', '.join(cities[:-1])} or {cities[-1]}"
             return f"This is in {where}, not {wanted}."

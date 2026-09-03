@@ -17,6 +17,7 @@ preference set here can be compared against a posting resolved from its
 freeform location string without a translation layer in between.
 """
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -247,6 +248,78 @@ COUNTRIES: dict[str, Country] = {
 }
 
 
+# Commute markets. A posting in Redmond is not "not Seattle" to anyone
+# actually job-hunting here, but the city check compared strings, so nine of
+# the twenty-three bundled seed postings -- Microsoft, Google, Snap, Alphabet's
+# Intrinsic among them -- were reported to the user as being in the wrong
+# place.
+#
+# Purely additive: a city named in no metro below falls back to the exact
+# match that was there before, so nothing that worked stops working.
+#
+# Deliberately conservative about names. Cities whose name is shared across
+# states -- Portland, Springfield, Newark, Burlington, Richmond, Aurora,
+# Arlington -- are left out, because this index is keyed by country and would
+# otherwise put a Portland, Maine posting in the Oregon commute market. That
+# is the same reasoning `_build_city_index` applies to ambiguous cities.
+_METROS = """
+united states|Seattle|Seattle|Bellevue|Redmond|Kirkland|Renton|Bothell|Everett|Issaquah|Sammamish|Tukwila|Lynnwood|Shoreline|Mercer Island|Woodinville|Federal Way|Tacoma
+united states|San Francisco Bay Area|San Francisco|Oakland|San Jose|Palo Alto|Mountain View|Sunnyvale|Santa Clara|Cupertino|Menlo Park|Redwood City|San Mateo|Fremont|Berkeley|South San Francisco|Foster City|Milpitas|Emeryville|Burlingame|San Bruno|Los Gatos
+united states|New York|New York|Manhattan|Brooklyn|Queens|Long Island City|Jersey City|Hoboken
+united states|Los Angeles|Los Angeles|Santa Monica|Culver City|El Segundo|Pasadena|Burbank|Long Beach|Glendale
+united states|Boston|Boston|Cambridge|Somerville|Waltham|Newton|Quincy|Medford|Watertown
+united states|Washington DC|Washington|Alexandria|Bethesda|McLean|Reston|Herndon|Tysons|Silver Spring|Rockville
+united states|Chicago|Chicago|Evanston|Naperville|Schaumburg|Oak Brook|Deerfield
+united states|Austin|Austin|Round Rock|Cedar Park|Pflugerville
+united states|Denver|Denver|Boulder|Broomfield|Lakewood|Golden|Englewood|Centennial
+united states|Dallas-Fort Worth|Dallas|Plano|Irving|Frisco|Richardson|Fort Worth|Addison
+united states|Atlanta|Atlanta|Alpharetta|Sandy Springs|Marietta|Dunwoody
+united states|Phoenix|Phoenix|Scottsdale|Tempe|Chandler|Mesa|Gilbert
+united states|Raleigh-Durham|Raleigh|Durham|Cary|Chapel Hill|Morrisville
+united states|Salt Lake City|Salt Lake City|Lehi|Draper|Sandy|South Jordan|Provo|Orem
+united states|Minneapolis-St Paul|Minneapolis|St. Paul|Eden Prairie|Minnetonka
+united states|Miami|Miami|Fort Lauderdale|Coral Gables|Boca Raton|Hialeah
+united states|Philadelphia|Philadelphia|King of Prussia|Conshohocken
+united states|San Diego|San Diego|Carlsbad|La Jolla|Del Mar
+canada|Toronto|Toronto|Mississauga|Brampton|Markham|Vaughan|Etobicoke|North York|Scarborough|Oakville
+canada|Vancouver|Vancouver|Burnaby|Surrey|Coquitlam|North Vancouver|New Westminster
+canada|Montreal|Montreal|Laval|Longueuil
+india|Delhi NCR|Delhi|New Delhi|Noida|Greater Noida|Gurugram|Gurgaon|Ghaziabad|Faridabad
+india|Mumbai|Mumbai|Navi Mumbai|Thane
+netherlands|Amsterdam|Amsterdam|Amstelveen|Haarlem|Hoofddorp|Diemen
+australia|Sydney|Sydney|North Sydney|Parramatta|Chatswood|Macquarie Park
+australia|Melbourne|Melbourne|Docklands|Southbank|Cremorne
+ireland|Dublin|Dublin|Sandyford|Blanchardstown|Dun Laoghaire
+"""
+
+
+def _build_metro_index() -> dict[str, list[tuple[str, str]]]:
+    """country slug -> [(normalised city, metro label)], longest name first.
+
+    Longest first so "New Delhi" is read before "Delhi" and "South San
+    Francisco" before "San Francisco"; both land in the same metro here, but
+    the ordering keeps the answer stable if a future entry splits them.
+    """
+    index: dict[str, list[tuple[str, str]]] = {}
+    for line in _METROS.strip().splitlines():
+        country, metro, *metro_cities = line.split("|")
+        index.setdefault(country, []).extend((normalize(c), metro) for c in metro_cities)
+    for entries in index.values():
+        entries.sort(key=lambda pair: -len(pair[0]))
+    return index
+
+
+def metro_of(country_slug: str, location: str) -> str:
+    """The commute market a free-text location sits in, or "" if unknown."""
+    if not location or not country_slug:
+        return ""
+    text = normalize(location)
+    for city, metro in _METRO_INDEX.get(country_slug, ()):
+        if re.search(r"(?<![a-z0-9])" + re.escape(city) + r"(?![a-z0-9])", text):
+            return metro
+    return ""
+
+
 def normalize(text: str) -> str:
     """Casefold and strip accents, so "Münster" and "Munster" are one key.
 
@@ -283,6 +356,8 @@ def _build_city_index() -> dict[str, dict[str, str]]:
         index[slug] = {name: next(iter(codes)) for name, codes in seen.items() if len(codes) == 1}
     return index
 
+
+_METRO_INDEX = _build_metro_index()
 
 _CITY_INDEX = _build_city_index()
 
