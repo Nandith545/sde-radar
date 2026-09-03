@@ -12,7 +12,9 @@ SKILL_ALIASES: dict[str, list[str]] = {
     "Spring Boot": ["spring boot", "springboot", "spring framework"],
     "Python": ["python"],
     "JavaScript": ["javascript", "js"],
-    "TypeScript": ["typescript", "ts"],
+    # "ts" is deliberately absent: SpaceX and Axon both post cleared roles,
+    # and "TS/SCI clearance" tagged every one of them as TypeScript.
+    "TypeScript": ["typescript"],
     "Node.js": ["node.js", "nodejs", "node js"],
     "React": ["react.js", "reactjs", "react"],
     "Angular": ["angular"],
@@ -26,7 +28,9 @@ SKILL_ALIASES: dict[str, list[str]] = {
     "Redis": ["redis"],
     "Kafka": ["kafka"],
     "RabbitMQ": ["rabbitmq"],
-    "AWS": ["aws", "amazon web services", "ec2", "lambda", "dynamodb", "s3", "eks", "sqs", "cloudformation"],
+    # "lambda" is absent on purpose -- it is an ordinary word in Java, Python
+    # and C++ prose, and tagged "lambda expressions in Java" as AWS.
+    "AWS": ["aws", "amazon web services", "ec2", "dynamodb", "s3", "eks", "sqs", "cloudformation"],
     "GCP": ["gcp", "google cloud"],
     "Azure": ["azure"],
     "Docker": ["docker"],
@@ -45,10 +49,10 @@ SKILL_ALIASES: dict[str, list[str]] = {
     "REST APIs": ["restful", "rest api", "rest apis"],
     "GraphQL": ["graphql"],
     "gRPC": ["grpc"],
-    "Machine Learning": ["machine learning", "ml"],
+    "Machine Learning": ["machine learning"],
     "Generative AI": ["generative ai", "genai", "gen ai"],
     "LangChain": ["langchain"],
-    "RAG": ["retrieval-augmented generation", "retrieval augmented generation", " rag "],
+    "RAG": ["retrieval-augmented generation", "retrieval augmented generation"],
     "LLM": ["llm", "large language model", "large language models"],
     "OpenAI API": ["openai"],
     "Anthropic API": ["anthropic", "claude api"],
@@ -56,7 +60,7 @@ SKILL_ALIASES: dict[str, list[str]] = {
     "TensorFlow": ["tensorflow"],
     "C++": ["c++"],
     "C#": ["c#", ".net"],
-    "Go": ["golang", " go "],
+    "Go": ["golang"],
     "Scala": ["scala"],
     "Swift": ["swift"],
     "Kotlin": ["kotlin"],
@@ -65,18 +69,40 @@ SKILL_ALIASES: dict[str, list[str]] = {
     "Agile/Scrum": ["agile", "scrum"],
     "Observability": ["cloudwatch", "datadog", "splunk", "grafana", "prometheus", "observability"],
     "Data Engineering": ["etl", "data pipeline", "data engineering"],
-    "Security": ["oauth", "security", "authentication", "authorization"],
+    # Bare "security" is absent: it matches background-check and clearance
+    # boilerplate on postings that have nothing to do with security work.
+    "Security": ["oauth", "authentication", "authorization"],
+}
+
+# Tokens that are a skill only when capitalised exactly, because the
+# lowercase form is an ordinary English word. Written as full patterns rather
+# than aliases because each needs its own guard; they are matched
+# case-sensitively, unlike everything in SKILL_ALIASES.
+#
+# These used to live in SKILL_ALIASES as " go " and " rag " -- padded with
+# spaces to force a word boundary. The padding never took effect: the
+# compiler called .strip() on every alias, so both matched the English words,
+# and any posting saying "we go above and beyond" listed Go as a requirement.
+CASE_SENSITIVE_PATTERNS: dict[str, list[str]] = {
+    # "Go to our careers page" is the one common capitalised false positive.
+    "Go": [r"(?<![A-Za-z0-9])Go(?!\s+to\b)(?![A-Za-z0-9])"],
+    "RAG": [r"(?<![A-Za-z0-9])RAG(?![A-Za-z0-9])"],
+    # Lowercase "ml" is millilitres.
+    "Machine Learning": [r"(?<![A-Za-z0-9])ML(?![A-Za-z0-9])"],
 }
 
 CANONICAL_TAGS = list(SKILL_ALIASES.keys())
 
-_COMPILED = {
+_COMPILED: dict[str, list[re.Pattern[str]]] = {
     tag: [
         re.compile(r"(?<![a-zA-Z0-9])" + re.escape(alias.strip()) + r"(?![a-zA-Z0-9])", re.IGNORECASE)
         for alias in aliases
     ]
     for tag, aliases in SKILL_ALIASES.items()
 }
+
+for _tag, _patterns in CASE_SENSITIVE_PATTERNS.items():
+    _COMPILED.setdefault(_tag, []).extend(re.compile(p) for p in _patterns)
 
 
 def extract_skills(text: str) -> list[str]:

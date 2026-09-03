@@ -414,3 +414,70 @@ def test_an_unreadable_location_is_not_a_state_mismatch(make_job) -> None:
     user = _user(target_cities=[], target_country="United States", target_states=["WA"])
 
     assert preference_mismatch(make_job(location="Unspecified"), user) is None
+
+
+# ---- Skill term shape ---------------------------------------------------
+
+
+def test_matching_more_skills_beats_matching_a_higher_proportion(make_job) -> None:
+    """The ratio term used to be worth twice the overlap term, so a posting
+    listing two requirements you both met outranked one listing twenty of
+    which you met eight -- four times the matched skills, fifteen points
+    worse."""
+    resume = _resume(["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "React", "Kafka", "Go"])
+    user = _user(target_titles="Software Engineer")
+
+    deep = make_job(
+        title="Software Engineer",
+        skills=[
+            *["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "React", "Kafka", "Go"],
+            *["Scala", "Vue", "Azure", "Terraform", "gRPC", "Swift", "Kotlin", "Angular"],
+        ],
+    )
+    shallow = make_job(title="Software Engineer", skills=["Python", "Docker"])
+
+    assert score_job(deep, user, resume).score > score_job(shallow, user, resume).score
+
+
+def test_a_posting_with_no_description_is_not_buried(make_job) -> None:
+    """SmartRecruiters emits postings past MAX_DETAIL_FETCHES with no
+    description, so there is nothing to tag. That is a fact about our
+    ingestion, not about the job -- it should not score below a posting the
+    candidate demonstrably does not match."""
+    resume = _resume(["Python", "FastAPI", "Docker"])
+    user = _user(target_titles="Software Engineer")
+
+    untagged = make_job(title="Software Engineer", description="", skills=[])
+    mismatched = make_job(title="Software Engineer", skills=["Scala", "Swift", "Kotlin", "Vue"])
+
+    assert score_job(untagged, user, resume).score > score_job(mismatched, user, resume).score
+
+
+# ---- Title matching -----------------------------------------------------
+
+
+def test_title_matching_survives_the_usual_spellings(make_job) -> None:
+    """Substring matching missed three of the commonest ways this pool spells
+    the job the user asked for."""
+    resume = _resume(["Python"])
+    user = _user(target_titles="Software Engineer")
+
+    for title in ("Software Development Engineer II", "SDE II", "Senior Software Engineer"):
+        result = score_job(make_job(title=title, skills=["Python"]), user, resume)
+        assert "Title matches" in result.reason, title
+
+
+def test_developer_and_engineer_are_the_same_role(make_job) -> None:
+    resume = _resume(["Python"])
+    user = _user(target_titles="Backend Engineer")
+    result = score_job(make_job(title="Backend Developer", skills=["Python"]), user, resume)
+    assert "Title matches" in result.reason
+
+
+def test_an_unrelated_engineering_title_still_does_not_match(make_job) -> None:
+    """Token matching must not become a free pass for anything ending in
+    "Engineer"."""
+    resume = _resume(["Python"])
+    user = _user(target_titles="Software Engineer")
+    result = score_job(make_job(title="Sales Engineer", skills=["Python"]), user, resume)
+    assert "Title matches" not in result.reason
