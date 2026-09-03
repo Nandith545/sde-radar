@@ -67,6 +67,36 @@ def test_reset_clears_a_key() -> None:
     assert limiter.check("k")[0] is True
 
 
+def test_check_prunes_expired_buckets_without_being_asked() -> None:
+    """The leak isn't that pruning was wrong, it's that nothing called it.
+
+    prune() existed and was correct, but the only caller was this test file,
+    so under the app the dict grew one permanent entry per distinct key --
+    driveable by varying the email on every attempt.
+    """
+    limiter = SlidingWindowRateLimiter(max_attempts=5, window_seconds=1)
+    for i in range(50):
+        limiter.check(f"key-{i}")
+    assert len(limiter._hits) == 50
+
+    time.sleep(1.1)
+    limiter.check("one-more")  # no explicit prune(): check does the sweeping
+
+    assert len(limiter._hits) == 1
+
+
+def test_the_sweep_leaves_live_buckets_alone() -> None:
+    """A sweep that dropped keys still inside the window would hand back the
+    quota it just spent -- the throttle would stop working."""
+    limiter = SlidingWindowRateLimiter(max_attempts=2, window_seconds=1)
+    limiter.check("victim")
+    time.sleep(1.1)
+    limiter.check("victim")  # triggers a sweep; the first hit has expired
+    limiter.check("victim")
+
+    assert limiter.check("victim")[0] is False
+
+
 def test_prune_drops_expired_buckets() -> None:
     """Unbounded key growth is a slow memory leak an attacker can drive by
     varying the email on every attempt."""

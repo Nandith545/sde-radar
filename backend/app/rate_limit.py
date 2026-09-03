@@ -29,6 +29,7 @@ class SlidingWindowRateLimiter:
         self.window_seconds = window_seconds
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
+        self._last_prune = time.monotonic()
 
     def check(self, key: str) -> tuple[bool, int]:
         """Records an attempt for `key`.
@@ -40,6 +41,8 @@ class SlidingWindowRateLimiter:
         cutoff = now - self.window_seconds
 
         with self._lock:
+            self._maybe_prune(now)
+
             hits = self._hits[key]
             while hits and hits[0] < cutoff:
                 hits.popleft()
@@ -61,13 +64,31 @@ class SlidingWindowRateLimiter:
         """Drops all state. Used by tests."""
         with self._lock:
             self._hits.clear()
+            self._last_prune = time.monotonic()
+
+    def _maybe_prune(self, now: float) -> None:
+        """Sweeps expired keys at most once per window. Caller holds the lock.
+
+        `check` inserts into a defaultdict, so every distinct key it sees
+        allocates an entry that nothing else ever removes -- a leak an
+        attacker drives directly by varying the email, or the client address
+        when that is spoofable. Pruning here rather than from a scheduled job
+        keeps the limiter self-maintaining: it holds for any caller, in tests
+        as well as under the app, with nothing to wire up and nothing to
+        forget.
+
+        Rate-limited to one sweep per window because the sweep is O(keys) and
+        a key younger than the window can never be dropped, so running it more
+        often costs a full scan to find nothing. That bounds the dict at
+        roughly one window's worth of distinct keys.
+        """
+        if now - self._last_prune < self.window_seconds:
+            return
+        self._last_prune = now
+        self._prune(now)
 
     def _prune(self, now: float) -> None:
-        """Drops empty and fully-expired buckets.
-
-        Without this the dict grows one entry per distinct key forever, which
-        is a slow memory leak an attacker can drive by varying the email.
-        """
+        """Drops empty and fully-expired buckets. Caller holds the lock."""
         cutoff = now - self.window_seconds
         for key in list(self._hits):
             hits = self._hits[key]
@@ -77,5 +98,8 @@ class SlidingWindowRateLimiter:
                 del self._hits[key]
 
     def prune(self) -> None:
+        """Forces a sweep now, ignoring the once-per-window pacing."""
         with self._lock:
-            self._prune(time.monotonic())
+            now = time.monotonic()
+            self._last_prune = now
+            self._prune(now)

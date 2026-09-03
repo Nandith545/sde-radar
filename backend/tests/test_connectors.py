@@ -7,6 +7,8 @@ The value is regression safety — if someone refactors a connector, these
 catch it — plus proof that malformed data degrades instead of exploding.
 """
 
+import logging
+
 import httpx
 import pytest
 import respx
@@ -22,7 +24,7 @@ from app.services.sources import (
     remotive,
     smartrecruiters,
 )
-from app.services.sources.base import RawJob
+from app.services.sources.base import RawJob, describe_http_error
 
 # ---- Registry -----------------------------------------------------------
 
@@ -730,3 +732,55 @@ def test_smartrecruiters_returns_nothing_on_an_http_error(monkeypatch) -> None:
     monkeypatch.setattr("app.config.settings.smartrecruiters_companies", "BoschGroup")
     respx.get(url__regex=r".*/companies/BoschGroup/postings\?.*").mock(return_value=httpx.Response(503))
     assert smartrecruiters.fetch(["engineer"], "") == []
+
+
+# ---- Credentials must not reach the logs --------------------------------
+
+
+def test_describe_http_error_reports_the_status_without_the_url() -> None:
+    """httpx puts the request URL in an HTTPStatusError's message, and two
+    connectors carry their key in that URL."""
+    request = httpx.Request("GET", "https://api.adzuna.com/v1/api?app_key=SUPERSECRET")
+    exc = httpx.HTTPStatusError(
+        "Client error '429 Too Many Requests' for url 'https://api.adzuna.com/v1/api?app_key=SUPERSECRET'",
+        request=request,
+        response=httpx.Response(429, request=request),
+    )
+
+    assert describe_http_error(exc) == "HTTP 429"
+
+
+def test_describe_http_error_names_a_transport_failure() -> None:
+    """No status to report, so the type is all there is -- and it is enough
+    to tell a timeout from a DNS failure in the logs."""
+    assert describe_http_error(httpx.ConnectTimeout("timed out")) == "ConnectTimeout"
+
+
+@respx.mock
+def test_adzuna_never_logs_its_api_key(monkeypatch, caplog) -> None:
+    """A 429 is routine on a free tier, and a log line outlives the incident
+    that produced it. This used to log the raw exception, URL and all."""
+    monkeypatch.setattr("app.config.settings.adzuna_app_id", "adzuna-id-9f3c")
+    monkeypatch.setattr("app.config.settings.adzuna_app_key", "adzuna-key-4b71")
+    respx.get(url__startswith="https://api.adzuna.com").mock(return_value=httpx.Response(429))
+
+    with caplog.at_level(logging.WARNING):
+        assert adzuna.fetch(["Software Engineer"], "Seattle, WA") == []
+
+    assert "adzuna-key-4b71" not in caplog.text
+    assert "adzuna-id-9f3c" not in caplog.text
+    assert "HTTP 429" in caplog.text  # the failure is still diagnosable
+
+
+@respx.mock
+def test_jooble_never_logs_its_api_key(monkeypatch, caplog) -> None:
+    """Jooble's key sits in the path rather than the query string, so it
+    leaks the same way."""
+    monkeypatch.setattr("app.config.settings.jooble_api_key", "jooble-key-8d20")
+    respx.post(url__startswith="https://jooble.org/api/").mock(return_value=httpx.Response(500))
+
+    with caplog.at_level(logging.WARNING):
+        assert jooble.fetch(["Backend Engineer"], "Seattle, WA") == []
+
+    assert "jooble-key-8d20" not in caplog.text
+    assert "HTTP 500" in caplog.text
